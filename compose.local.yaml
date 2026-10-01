@@ -1,0 +1,31 @@
+# Live localhost demo: no host Python, no local model weights, no public binding.
+services:
+  pramana:
+    build: .
+    image: ${PRAMANA_DOCKER_IMAGE:-pramana-local:latest}
+    pull_policy: never
+    init: true
+    command: [python, scripts/serve_demo.py, --container, --port, '8000']
+    environment:
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      PRAMANA_SEMANTIC: ${PRAMANA_SEMANTIC:-auto}
+      PRAMANA_CACHE_DIR: /app/data/cache
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      TOKENIZERS_PARALLELISM: 'false'
+    ports:
+      - '127.0.0.1:${PRAMANA_PORT:-8765}:8000'
+    volumes:
+      - local-state:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: ${PRAMANA_DOCKER_MEMORY:-768m}
+    cpus: 1
+    restart: unless-stopped
+volumes:
+  local-state:

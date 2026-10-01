@@ -1,0 +1,233 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PRAMANA — LLM Provider Registry
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  Connecting a new LLM means adding an entry here. No Python changes are needed
+#  for anything speaking the OpenAI Chat Completions dialect — which is most of
+#  the ecosystem, hosted and local alike.
+#
+#  Fields
+#  ──────
+#    adapter        openai_compatible | google_genai | stub
+#    base_url       API root (omit for google_genai to use its default)
+#    api_key_env    env var holding the key; omit/null for local servers
+#    default_model  used when a request names no model
+#    models         convenience aliases → concrete model ids
+#    capabilities   OPTIMISTIC declaration, corrected by probing. Never trusted:
+#                   `scripts/probe_providers.py` measures what actually works and
+#                   the adapter downgrades any capability that fails at runtime.
+#    limits         documented free-tier limits, enforced client-side so we throttle
+#                   ourselves rather than being throttled. VERIFY BY PROBING —
+#                   published figures change frequently.
+#    extra_headers  provider-specific headers
+#    enabled        false ⇒ never selected by the router
+#
+#  Rate limits below were transcribed from provider comparison articles in
+#  August 2026 and are NOT first-hand measurements. Treat them as starting
+#  estimates; `probe_providers.py` writes measured values to
+#  reports/provider_capabilities.json, which overrides this file at runtime.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+version: 1
+
+defaults:
+  timeout_s: 120
+  max_retries: 4
+  max_tokens: 512
+  temperature: 0.0
+
+providers:
+
+  # ─── Free hosted tiers — the primary path for this project ─────────────────
+
+  groq:
+    adapter: openai_compatible
+    base_url: https://api.groq.com/openai/v1
+    api_key_env: GROQ_API_KEY
+    default_model: openai/gpt-oss-20b
+    request_defaults: {reasoning_effort: low}
+    enabled: true
+    priority: 1                      # lower = preferred by the router
+    # Conservative capabilities retained from the previous model's probe.
+    # The current default passed basic generation on 2026-09-09; optional
+    # capabilities and multilingual quality still need model-specific probing.
+    # MEASURED 2026-08-10 by scripts/probe_providers.py for the previous model.
+    # Removed after probing: `logprobs` (never returned), `multi_sample` (n>1
+    # ignored -> the adapter tops up sequentially), `seed` (3 identical trials
+    # required; Groq produced 2 distinct outputs), `json_mode` (unverified).
+    capabilities: [system_role]
+    limits: { rpm: 30, rpd: 1000, tpm: 12000 }
+    models:
+      gpt-oss-20b: openai/gpt-oss-20b
+      llama3-70b: llama-3.3-70b-versatile
+      llama3-8b: llama-3.1-8b-instant
+      gemma: gemma2-9b-it
+    notes: >
+      Default updated 2026-09-09: openai/gpt-oss-20b passed live basic generation;
+      llama-3.3-70b-versatile was unavailable. Legacy aliases are retained for
+      explicit callers but their availability is not guaranteed.
+      Historical observations for the previous model, verified 2026-08-10:
+      reachable, ~130-260 ms first-response latency,
+      15 models listed, Devanagari and Tamil echoed correctly.
+      No logprobs -> confidence signal S3 is unavailable here.
+      No server-side n>1 -> each self-consistency sample costs one request.
+      Seed NOT honoured (2/3 distinct outputs across identical seeded calls);
+      an earlier single-trial probe reported the opposite, which is why the
+      seed test now requires three consecutive identical outputs.
+
+  google:
+    adapter: google_genai
+    api_key_env: GOOGLE_API_KEY
+    # Demo alias validated against this account. It can change without a code
+    # update: production/research must pin an available stable model and rerun
+    # acceptance. Historical unavailable models are not a reason to float a
+    # production release silently.
+    default_model: gemini-flash-lite-latest
+    enabled: true
+    priority: 2
+    # MEASURED 2026-08-10. Seed IS honoured here (3/3 identical) though Groq's is
+    # not -- worth knowing, since reproducible generation is the cheaper path to
+    # regenerating a lost draft cache.
+    capabilities: [system_role, seed]
+    limits: { rpm: 15, rpd: 1500 }
+    models:
+      flash-lite: gemini-flash-lite-latest      # verified working
+      flash: gemini-flash-latest                # works; see thinking-budget note
+      lite-3.5: gemini-3.5-flash-lite           # verified working
+      lite-3.1: gemini-3.1-flash-lite           # verified working
+      gemma: gemma-4-31b-it                     # works; leaks reasoning at low max_tokens
+    notes: >
+      Verified 2026-08-10 against a live key: 50 models listed.
+      WARNING — gemini-flash-latest and gemma-4-31b-it are reasoning models:
+      at max_tokens=16 the first returned empty output and the second leaked its
+      chain of thought. Give them a larger max_tokens budget, or prefer the
+      -flash-lite- variants for short deterministic probes.
+
+  openrouter:
+    adapter: openai_compatible
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    default_model: qwen/qwen-2.5-72b-instruct
+    enabled: true
+    priority: 3
+    capabilities: [system_role, multi_sample, seed]
+    limits: { rpm: 20, rpd: 50 }     # rpd → 1000 after a one-time $10 top-up
+    extra_headers:
+      HTTP-Referer: https://github.com/pramana-rag
+      X-Title: PRAMANA
+    models:
+      qwen: qwen/qwen-2.5-72b-instruct
+      llama3: meta-llama/llama-3.3-70b-instruct
+      gemma: google/gemma-3-27b-it
+    notes: >
+      Only provider carrying all three named families (Qwen, Llama-3, Gemma)
+      behind one interface. Default 50 rpd is the binding constraint.
+
+  cerebras:
+    adapter: openai_compatible
+    base_url: https://api.cerebras.ai/v1
+    api_key_env: CEREBRAS_API_KEY
+    default_model: llama-3.3-70b
+    enabled: false
+    priority: 4
+    capabilities: [system_role, seed]
+    limits: { rpm: 30, tpd: 1000000 }
+
+  # ─── Local servers — zero quota, useful if hardware ever allows ────────────
+
+  ollama:
+    adapter: openai_compatible
+    base_url: http://localhost:11434/v1
+    api_key_env: null                # local, unauthenticated
+    default_model: qwen2.5:1.5b
+    enabled: false
+    priority: 9
+    capabilities: [system_role, logprobs, seed]
+    limits: {}
+    notes: >
+      Returns logprobs (signal S3), which most free hosted tiers do not.
+      Not viable on the 7.7 GB dev laptop, but enable if a better machine
+      becomes available — the pipeline needs no other change.
+
+  lmstudio:
+    adapter: openai_compatible
+    base_url: http://localhost:1234/v1
+    api_key_env: null
+    default_model: ""
+    enabled: false
+    priority: 9
+    capabilities: [system_role]
+    limits: {}
+
+  vllm:
+    adapter: openai_compatible
+    base_url: http://localhost:8000/v1
+    api_key_env: null
+    default_model: Qwen/Qwen2.5-7B-Instruct
+    enabled: false
+    priority: 8
+    capabilities: [system_role, logprobs, seed, multi_sample]
+    limits: {}
+    notes: Colab fallback path — run vLLM in the notebook, tunnel the port.
+
+  # ─── Other OpenAI-dialect endpoints (evidence of portability) ─────────────
+
+  together:
+    adapter: openai_compatible
+    base_url: https://api.together.xyz/v1
+    api_key_env: TOGETHER_API_KEY
+    default_model: meta-llama/Llama-3.3-70B-Instruct-Turbo
+    enabled: false
+    priority: 5
+    capabilities: [system_role, logprobs, seed, multi_sample]
+    limits: { rpm: 60 }
+
+  deepinfra:
+    adapter: openai_compatible
+    base_url: https://api.deepinfra.com/v1/openai
+    api_key_env: DEEPINFRA_API_KEY
+    default_model: Qwen/Qwen2.5-72B-Instruct
+    enabled: false
+    priority: 6
+    capabilities: [system_role, seed]
+    limits: {}
+
+  github_models:
+    adapter: openai_compatible
+    base_url: https://models.inference.ai.azure.com
+    api_key_env: GITHUB_TOKEN
+    default_model: Llama-3.3-70B-Instruct
+    enabled: false
+    priority: 7
+    capabilities: [system_role]
+    limits: { rpm: 15, rpd: 150 }
+
+  # ─── Offline development — no network, no model, no quota ─────────────────
+
+  stub:
+    adapter: stub
+    default_model: stub-v1
+    enabled: true
+    priority: 99
+    capabilities: [system_role, logprobs, seed, multi_sample]
+    limits: {}
+    notes: >
+      Deterministic fixtures carrying planted hallucinations with known ground
+      truth. Makes the detection and correction stages unit-testable on a laptop
+      with no GPU and no internet. See README.md for the offline path.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Routing policy
+# ═══════════════════════════════════════════════════════════════════════════════
+router:
+  strategy: priority_with_failover
+  # priority_with_failover — lowest priority number first, fail over on
+  #   RateLimitError / QuotaExhaustedError / ModelNotAvailableError
+  # round_robin          — spread load to stretch combined daily quota
+  # single               — pin to router.pinned_provider (reproducible runs)
+
+  pinned_provider: null
+  cache_enabled: true
+  respect_declared_limits: true      # throttle client-side before the server does
+  failover_on: [rate_limit, quota_exhausted, model_not_available, transient]
+  max_failovers: 3

@@ -1,0 +1,28 @@
+services:
+  pramana:
+    build: .
+    init: true
+    env_file: .env.pilot
+    environment:
+      PRAMANA_MODE: pilot
+      PRAMANA_CORPUS_DIR: /app/corpus
+      PRAMANA_CACHE_ENABLED: 'false'
+      PRAMANA_EXPOSE_CORPUS: 'false'
+    ports:
+      - '127.0.0.1:8000:8000'
+    volumes:
+      - ./data/pilot/corpus:/app/corpus:ro
+      - pilot-state:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2
+    restart: unless-stopped
+volumes:
+  pilot-state:

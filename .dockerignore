@@ -1,0 +1,20 @@
+# Send only the inputs copied by Dockerfile. This keeps private documents,
+# environment files, reports and generated artifacts out of the build context.
+**
+!Dockerfile
+!.dockerignore
+!requirements-pilot.txt
+!pyproject.toml
+!README.md
+!run_demo.py
+!src/
+!src/**
+!scripts/
+!scripts/**
+!examples/
+!examples/corpus/
+!examples/corpus/**
+**/__pycache__
+**/*.pyc
+**/*.egg-info
+**/*.egg-info/**

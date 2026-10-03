@@ -99,6 +99,12 @@ jobs:
         run: |
           docker compose -p pramana-ci -f compose.demo.yaml up --build -d
           docker compose -p pramana-ci -f compose.demo.yaml ps
+          # "Started" is not "listening": wait for health before probing.
+          for attempt in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/v1/health >/dev/null && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/v1/health
       - name: Probe health and offline HTTP contract
         run: python scripts/validate_container_http.py --url http://127.0.0.1:8000 --out reports/ci-container/report.json
       - name: Tear down container

@@ -204,6 +204,13 @@ class MultilingualRetriever:
     query_variants: Callable[[str, Language], list[str]] | None = None
     """Optional native-script rewrites for Romanised Hindi/Tamil queries
     (see ``query_rewrite``). The original query is always searched as well."""
+    route_to: Language | None = None
+    """Search this language's index for every question, whatever language the
+    question is in -- set for an uploaded document, so a Hindi question can be
+    answered from an English document. ``None`` keeps per-language routing."""
+    query_translator: Callable[[str, Language, Language], list[str]] | None = None
+    """Optional ``(query, question_language, index_language)`` translation used
+    when the two differ. The original query is always searched as well."""
 
     def add_language(self, language: Language, retriever: HybridRetriever) -> None:
         if retriever.language != language:
@@ -216,7 +223,7 @@ class MultilingualRetriever:
         self, query: str, language: Language | None = None, top_k: int | None = None
     ) -> RetrievalResult:
         lang = language or detect_language(query).language
-        retriever = self.retrievers.get(lang)
+        retriever = self.retrievers.get(self.route_to or lang)
 
         if retriever is None:
             log.warning(
@@ -233,9 +240,13 @@ class MultilingualRetriever:
 
         from pramana.retrieval.query_rewrite import fuse_results, needs_native_variant
 
-        if self.query_variants is None or not needs_native_variant(query, retriever.language):
+        if lang != retriever.language and self.query_translator is not None:
+            candidates = self.query_translator(query, lang, retriever.language)
+        elif self.query_variants is not None and needs_native_variant(query, retriever.language):
+            candidates = self.query_variants(query, retriever.language)
+        else:
             return retriever.retrieve(query, top_k=top_k)
-        variants = [v for v in dict.fromkeys(self.query_variants(query, retriever.language)) if v != query]
+        variants = [v for v in dict.fromkeys(candidates) if v != query]
         if not variants:
             return retriever.retrieve(query, top_k=top_k)
         k = top_k or retriever.top_k

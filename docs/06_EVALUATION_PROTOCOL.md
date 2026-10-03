@@ -169,6 +169,45 @@ from verification and nothing else.
 translate-then-verify on Tamil, that is worth knowing — and it would mean the
 simpler architecture is sufficient.
 
+### 5.1 Cross-language setting (exploratory extension)
+
+The arms above keep question and document in one language. A common enterprise
+case breaks that assumption: the policy is in English and the employee asks in
+Hindi or Tamil. This setting is an exploratory extension of RQ4, not a new
+research question.
+
+**Mechanism.** An uploaded document's language is detected, and every question is
+routed to that document's index. When the question's language differs, one model
+call adds a translated query variant, fused with the original by rank. The answer
+is generated in the question's language. Claims are then verified directly
+against the document-language evidence by the LLM judge, which is told that
+premise and hypothesis may be in different languages. This is cross-lingual
+native verification (arm A); arms B and C are not implemented for this setting.
+
+**Procedure.**
+
+1. The sample policies in `examples/corpus/` state the same facts in English,
+   Hindi and Tamil, so the document's language is the only variable. They were
+   aligned on 2026-10-04. Before that, the Tamil text lacked two facts.
+2. `examples/eval/crosslingual.template.jsonl` holds 31 items in 10 parallel groups
+   (answerability A 18, B 3, C 6, D 3). Each item lists `evidence_languages`, the
+   document languages that state its answer. Items new in version
+   `crosslingual-0.1` are machine-drafted and marked `human_reviewed: false`.
+3. `python scripts/run_crosslingual.py` answers every question against the
+   document in every language. It writes `raw.jsonl`, `summary.json`,
+   `manifest.json` and `review.csv`.
+4. A person marks `human_mark` in `review.csv` as `correct`, `partial` or
+   `incorrect`. Then `--score review.csv` reports accuracy per condition and
+   language pair with 95% bootstrap intervals.
+
+**What may be reported.** `summary.json` describes behaviour against the draft
+labels: answering answerable questions, abstaining on unanswerable ones, and
+releasing only supported claims. It is not accuracy. Accuracy comes only from
+human marks, and is reported with *n* and its interval. On this corpus every
+figure is a pilot observation. The corpus is three fictional paragraphs, so
+retrieval is close to trivial. The judge shares a provider with the generator.
+The Hindi and Tamil items are machine-drafted. Each condition is a single run.
+
 ---
 
 ## 6. Statistical Protocol

@@ -19,6 +19,8 @@ verification use hosted APIs while retrieval and policy decisions run locally.
 ## What is included
 
 - English, Hindi, and Tamil question/answer auditing with language-aware claim handling.
+- Cross-language questions: ask in English, Hindi or Tamil about a document in any of the three;
+  the answer comes back in the question's language and is verified against the document's text.
 - BM25/vector retrieval, optional Google API embeddings, and evidence citations.
 - Provider routing with bounded quotas, timeouts, caching, validation, and failover.
 - Conservative actions: accept, regenerate, re-retrieve, prune, or abstain.

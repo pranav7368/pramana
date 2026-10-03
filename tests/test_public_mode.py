@@ -116,13 +116,16 @@ class TestSessionStore:
         now[0] = 500.0
         assert store.get("three") is None and len(store) == 0
 
-    def test_reset_one_language_keeps_the_others(self):
+    def test_a_new_upload_replaces_the_active_document(self):
         store = SessionStore()
         store.put("k", "en", "en-index", "en-doc")
         store.put("k", "hi", "hi-index", "hi-doc")
-        store.reset("k", "en")
         found = store.get("k")
-        assert found is not None and set(found.documents) == {"hi"}
+        assert found is not None and found.language == "hi" and set(found.documents) == {"hi"}
+        store.reset("k", "en")
+        assert store.get("k") is not None
+        store.reset("k")
+        assert store.get("k") is None
 
     @pytest.mark.parametrize("raw", [None, "", "short", "x" * 65, "has space" * 3, "../../etc/passwd/xxxxx"])
     def test_malformed_session_ids_are_refused(self, raw):

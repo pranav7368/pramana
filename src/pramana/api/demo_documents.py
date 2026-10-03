@@ -53,7 +53,8 @@ def _safe_name(filename: str) -> str:
     return name
 
 
-def prepare_document(data: bytes, filename: str, language: Language) -> PreparedDocument:
+def prepare_document(data: bytes, filename: str, language: Language | None = None) -> PreparedDocument:
+    """Extract, chunk and fingerprint an upload; ``language=None`` detects it from the text."""
     name = _safe_name(filename)
     suffix = Path(name).suffix.lower()
     if suffix not in {".pdf", ".md", ".txt"}:
@@ -74,6 +75,9 @@ def prepare_document(data: bytes, filename: str, language: Language) -> Prepared
 
     if sum(len(text) for _, text in pages) > MAX_EXTRACTED_CHARS:
         raise DocumentError("Extracted text exceeds the 120,000-character demo limit.")
+    if language is None:
+        from pramana.ingestion.language import detect_language
+        language = detect_language(" ".join(text for _, text in pages)[:4000]).language
     digest = hashlib.sha256(data).hexdigest()
     chunks: list[Chunk] = []
     for page_number, text in pages:

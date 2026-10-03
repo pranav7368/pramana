@@ -24,6 +24,7 @@ class Settings:
     api_embedding_model: str = ""
     reranker_model: str = ""
     transliterate_queries: bool = True
+    cross_lingual_queries: bool = True
     log_format: str = "text"
     confidence_model: Path | None = None
     languages: tuple[Language, ...] = LANGUAGES
@@ -141,6 +142,7 @@ class Settings:
             api_embedding_model=os.getenv("PRAMANA_API_EMBEDDING_MODEL", ""),
             reranker_model=os.getenv("PRAMANA_RERANKER_MODEL", ""),
             transliterate_queries=flag("PRAMANA_TRANSLITERATE_QUERIES", True),
+            cross_lingual_queries=flag("PRAMANA_CROSS_LINGUAL_QUERIES", True),
             log_format=os.getenv("PRAMANA_LOG_FORMAT", "text"),
             confidence_model=path("PRAMANA_CONFIDENCE_MODEL"),
             # Membership is validated in __post_init__.

@@ -85,6 +85,9 @@ def build_pipeline(offline: bool | None = None, *, settings: Settings | None = N
     if not offline and cfg.transliterate_queries:
         from pramana.retrieval.query_rewrite import LLMQueryTransliterator
         retriever.query_variants = LLMQueryTransliterator(router)
+    if not offline and cfg.cross_lingual_queries:
+        from pramana.retrieval.query_rewrite import LLMQueryTranslator
+        retriever.query_translator = LLMQueryTranslator(router)
     try:
         backend = KeywordNLIBackend() if offline else (
             TransformerNLIBackend() if cfg.verifier == "transformer" else LLMNLIBackend(router, strict=True)

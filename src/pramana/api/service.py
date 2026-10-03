@@ -111,9 +111,12 @@ class AskResponse(BaseModel):
     rolled_back: bool
     stop_reason: str
     retrieved_chunk_ids: list[str]
+    evidence_language: str = Field(
+        default="", description="Language of the document searched; differs from "
+        "detected_language when a question is answered from a document in another language.")
 
 
-def to_response(result: AssuranceResult) -> AskResponse:
+def to_response(result: AssuranceResult, evidence_language: str = "") -> AskResponse:
     return AskResponse(
         answer=result.final_answer,
         detected_language=result.language,
@@ -147,6 +150,7 @@ def to_response(result: AssuranceResult) -> AskResponse:
         correction_regressions=result.correction_regressions,
         rolled_back=result.rolled_back, stop_reason=result.stop_reason,
         retrieved_chunk_ids=result.retrieved_chunk_ids,
+        evidence_language=evidence_language or result.language,
     )
 
 
@@ -289,7 +293,7 @@ def ask(request: AskRequest, http: Request) -> AskResponse:
         raise HTTPException(422, "Pilot answers require assurance; use /v1/verify for audits")
     pipeline, uploaded = session_pipeline(http)
     lang = request_language(request.query, request.language, pipeline)
-    if _state["offline"] and lang in uploaded:
+    if _state["offline"] and uploaded:
         raise HTTPException(422, "Answering an uploaded document needs a live provider; offline audit is available")
     try:
         with request_budget(cfg.max_provider_calls, cfg.request_budget_s):
@@ -301,7 +305,7 @@ def ask(request: AskRequest, http: Request) -> AskResponse:
         log.error("pipeline failed type=%s", type(exc).__name__)
         raise HTTPException(503, "Answer service unavailable; retry later") from None
 
-    return to_response(result)
+    return to_response(result, pipeline.retriever.route_to or lang)
 
 
 @app.post("/v1/verify", response_model=AskResponse,
@@ -319,7 +323,8 @@ def verify(request: VerifyRequest, http: Request) -> AskResponse:
     from pramana.confidence.fusion import collect_features
     from pramana.schemas import Draft
 
-    lang = request_language(request.query, request.language, pipeline)
+    # The claims being audited are in the answer's language, not necessarily the question's.
+    lang = request_language(request.answer, request.language, pipeline)
     started = time.perf_counter()
     draft = Draft(text=request.answer, language=lang)
     cfg = _state["settings"]
@@ -346,7 +351,8 @@ def verify(request: VerifyRequest, http: Request) -> AskResponse:
                 {c for v in detection.claim_verdicts for c in v.supporting_chunk_ids}
             ),
             trace_id=uuid.uuid4().hex[:12],
-        )
+        ),
+        pipeline.retriever.route_to or lang,
     )
 
 
@@ -388,6 +394,7 @@ def demo_documents(http: Request) -> dict[str, Any]:
         "confidence_fitted": bool(pipeline.confidence.feature_names),
         "api_embedding_model": cfg.api_embedding_model,
         "limits": limiter.remaining(visitor(http)) if limiter.enabled else None,
+        "uploaded": next(iter(uploaded.values())).summary() if uploaded else None,
         "session_ttl_s": cfg.session_ttl_s,
         "documents": {
             lang: uploaded[lang].summary() if lang in uploaded
@@ -400,20 +407,28 @@ def demo_documents(http: Request) -> dict[str, Any]:
 
 @app.post("/v1/demo/documents", dependencies=[Depends(usage_quota), Depends(inference_slot)])
 async def upload_demo_document(
-    request: Request, filename: str, language: Language = "en",
+    request: Request, filename: str, language: Language | None = None,
 ) -> dict[str, Any]:
-    """Index an uploaded text PDF/Markdown/text file for this visitor's session only."""
+    """Index an uploaded text PDF/Markdown/text file for this visitor's session only.
+
+    The document's language is detected unless given. Once indexed, questions in
+    any enabled language are answered from it.
+    """
     _require_demo()
     from pramana.api.demo_documents import DocumentError, prepare_document
     from pramana.retrieval.hybrid import HybridRetriever
 
     key = visitor_session(request, required=True)
-    if language not in _state["pipeline"].retriever.languages:
+    enabled = _state["pipeline"].retriever.languages
+    if language is not None and language not in enabled:
         raise HTTPException(422, "This language is not enabled")
     try:
         prepared = await run_in_threadpool(prepare_document, await request.body(), filename, language)
     except DocumentError as exc:
         raise HTTPException(422, str(exc)) from None
+    language = prepared.language
+    if language not in enabled:
+        raise HTTPException(422, "Documents must be in an enabled language: " + ", ".join(enabled))
     pipeline = _state["pipeline"]
     old = pipeline.retriever.retrievers[language]
     dense = None

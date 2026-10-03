@@ -1,10 +1,11 @@
 """Per-visitor document indexes for the demo and the hosted public demo.
 
-An uploaded document replaces the sample index for one language, but only for
-the browser tab that uploaded it. Every other visitor keeps the shared sample
-indexes. Sessions live in memory, expire after a period of inactivity and are
-evicted least-recently-used first, so a public deployment cannot be made to hold
-an unbounded number of documents.
+A visitor has at most one uploaded document, in English, Hindi or Tamil. While
+it is active every question is answered from it, whatever language the question
+is asked in, but only for the browser tab that uploaded it. Every other visitor
+keeps the shared sample indexes. Sessions live in memory, expire after a period
+of inactivity and are evicted least-recently-used first, so a public deployment
+cannot be made to hold an unbounded number of documents.
 """
 
 from __future__ import annotations
@@ -36,6 +37,11 @@ class DemoSession:
     documents: dict[Language, Any] = field(default_factory=dict)
     touched: float = field(default_factory=time.monotonic)
 
+    @property
+    def language(self) -> Language | None:
+        """Language of the active uploaded document, if any."""
+        return next(iter(self.documents), None)
+
 
 class SessionStore:
     """Thread-safe, bounded mapping of session id to uploaded indexes."""
@@ -65,8 +71,8 @@ class SessionStore:
         with self._lock:
             self._expire()
             found = self._sessions.get(key) or DemoSession()
-            found.retrievers[language] = retriever
-            found.documents[language] = document
+            # One active document per visitor: a new upload replaces the last.
+            found.retrievers, found.documents = {language: retriever}, {language: document}
             found.touched = self._clock()
             self._sessions[key] = found
             self._sessions.move_to_end(key)
@@ -93,10 +99,11 @@ class SessionStore:
 
 
 def session_retriever(shared: MultilingualRetriever, session: DemoSession | None) -> MultilingualRetriever:
-    """The shared indexes with this session's uploads layered on top."""
-    if session is None or not session.retrievers:
+    """The shared indexes, or every question routed to this session's document."""
+    if session is None or session.language is None:
         return shared
     return MultilingualRetriever(
         retrievers={**shared.retrievers, **session.retrievers},
         fallback=shared.fallback, query_variants=shared.query_variants,
+        route_to=session.language, query_translator=shared.query_translator,
     )

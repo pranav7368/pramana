@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Cross-language questions
+
+- An uploaded document's language is detected, and questions in any enabled
+  language are answered from it, in the question's language. Retrieval adds a
+  translated query variant when the languages differ
+  (`PRAMANA_CROSS_LINGUAL_QUERIES`). Verification is told that premise and
+  hypothesis may be in different languages.
+- One active document per visitor. The interface shows the detected language,
+  marks answers drawn from a document in another language, and finds evidence
+  passages in any language.
+- The Hindi and Tamil sample policies now state the same facts as the English
+  one, so the document's language is the only difference between them.
+- `scripts/run_crosslingual.py` and `examples/eval/crosslingual.template.jsonl`
+  (31 draft items) run every question against every document language. They
+  write behaviour tables and a review sheet, and `--score` turns human marks into
+  accuracy with bootstrap intervals (`docs/06_EVALUATION_PROTOCOL.md` §5.1).
+
 ### Repositories
 
 - The public repository is generated from the private one by

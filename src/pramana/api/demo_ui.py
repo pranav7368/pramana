@@ -317,7 +317,7 @@ kbd { font:11px var(--mono); border:1px solid var(--line-2); border-bottom-width
     </div>
     <label class="drop" id="drop" for="file">
       <input class="sr" id="file" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown">
-      <b>Add a document</b><span>Drop a text PDF, .txt or .md here · 5 MB · 25 pages</span>
+      <b>Add a document</b><span>Text PDF, .txt or .md in English, हिन्दी or தமிழ் · 5 MB · 25 pages</span>
     </label>
     <div class="pending hidden" id="pending">
       <span class="name" id="pendingName"></span>
@@ -334,7 +334,7 @@ kbd { font:11px var(--mono); border:1px solid var(--line-2); border-bottom-width
     <section id="askPane" role="tabpanel" aria-labelledby="tab-ask">
       <form id="askForm" class="composer">
         <label class="sr" for="question">Question</label>
-        <textarea class="q" id="question" rows="2" maxlength="2000" placeholder="Ask about the active document…" required></textarea>
+        <textarea class="q" id="question" rows="2" maxlength="2000" placeholder="Ask in English, हिन्दी or தமிழ் — the answer comes back in your language…" required></textarea>
         <div class="foot"><span class="hint keys"><kbd>Ctrl</kbd> <kbd>Enter</kbd> to check</span>
           <button class="btn btn-ink" id="askButton" type="submit">Get verified answer</button></div>
       </form>
@@ -441,9 +441,13 @@ function setLang(lang) {
 document.querySelectorAll('.langs button').forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang)));
 
 /* Source */
+// An uploaded document answers questions in every language; otherwise the
+// selected language's sample policy is the source.
+const activeDoc = () => state.app?.uploaded || state.app?.documents?.[state.lang];
+const docLang = () => state.app?.uploaded?.language || state.lang;
 function renderExamples() {
   const box = $('examples'); box.innerHTML = '';
-  const doc = state.app?.documents?.[state.lang];
+  const doc = activeDoc();
   if (!doc?.sample) return;
   const label = document.createElement('span'); label.className = 'kicker'; label.textContent = 'Try';
   box.appendChild(label);
@@ -454,16 +458,16 @@ function renderExamples() {
   });
 }
 function renderDocument() {
-  $('langName').textContent = LANGS[state.lang];
-  const doc = state.app?.documents?.[state.lang];
+  $('langName').textContent = LANGS[docLang()];
+  const doc = activeDoc();
   if (!doc) return;
   $('docName').textContent = doc.sample ? 'Fictional sample policy' : doc.name;
   $('docTag').textContent = doc.sample ? 'Sample' : 'Your document';
   $('docTag').classList.toggle('own', !doc.sample);
   $('docMeta').textContent = doc.sample
     ? `${plural(doc.chunks, 'passage')} · safe to experiment with`
-    : `${plural(doc.pages, 'page')} · ${plural(doc.chunks, 'passage')} · ${Number(doc.characters).toLocaleString()} characters · held in memory`;
-  const chunks = state.corpus[state.lang] || [];
+    : `${LANGS[doc.language] || doc.language} detected · ${plural(doc.pages, 'page')} · ${plural(doc.chunks, 'passage')} · held in memory · ask in any language`;
+  const chunks = state.corpus[docLang()] || [];
   $('passageCount').textContent = chunks.length;
   $('sourcePreview').innerHTML = chunks.slice(0, 60).map((c, i) =>
     `<li><span class="mono">${esc(c.source || 'Sample policy')}${c.page ? ' · p.' + Number(c.page) : ''} · ${i + 1}</span>${esc(c.text.slice(0, 420))}${c.text.length > 420 ? '…' : ''}</li>`
@@ -520,11 +524,11 @@ $('upload').addEventListener('click', async () => {
   setBusy(true); setStatus('Reading the document and building its index…');
   try {
     const file = state.file;
-    await api(`/v1/demo/documents?filename=${encodeURIComponent(file.name)}&language=${state.lang}`,
+    const doc = await api(`/v1/demo/documents?filename=${encodeURIComponent(file.name)}`,
       {method:'POST', headers:{'Content-Type': file.type || 'application/octet-stream'}, body:file});
     await refresh(); renderEmpty();
     state.file = null; $('file').value = ''; $('pending').classList.add('hidden');
-    setStatus('Indexed. Questions now use this document.');
+    setStatus(`Indexed · ${LANGS[doc.language] || doc.language} detected. Ask in English, हिन्दी or தமிழ்.`);
     $('question').focus();
   } catch (error) { setStatus(friendly(error), true); refreshLimits(); }
   finally { setBusy(false); }
@@ -533,7 +537,7 @@ $('reset').addEventListener('click', async () => {
   if (state.busy) return;
   setBusy(true); setStatus('Restoring the sample…');
   try {
-    await api(`/v1/demo/documents?language=${state.lang}`, {method:'DELETE'});
+    await api('/v1/demo/documents', {method:'DELETE'});
     await refresh(); renderEmpty(); setStatus('Sample document restored.');
   } catch (error) { setStatus(error.message, true); }
   finally { setBusy(false); }
@@ -588,12 +592,12 @@ async function run(kind, path, body) {
 $('askForm').addEventListener('submit', e => {
   e.preventDefault();
   const query = $('question').value.trim();
-  if (query) run('answer', '/v1/ask', {query, language:state.lang});
+  if (query) run('answer', '/v1/ask', {query});
 });
 $('auditForm').addEventListener('submit', e => {
   e.preventDefault();
   const query = $('auditQuestion').value.trim(), answer = $('draft').value.trim();
-  if (query && answer) run('audit', '/v1/verify', {query, answer, language:state.lang});
+  if (query && answer) run('audit', '/v1/verify', {query, answer});
 });
 $('askInstead').addEventListener('click', () => { $('question').value = $('auditQuestion').value; setMode('ask'); $('askForm').requestSubmit(); });
 document.addEventListener('keydown', e => {
@@ -684,7 +688,7 @@ function renderResult(result, kind) {
 
   $('output').innerHTML = `
     <div class="verdict-line"><span class="state ${tone}">${esc(title)}</span>
-      <span class="runmeta"><span>${esc(String(result.detected_language).toUpperCase())}</span><span>${seconds.toFixed(1)} s</span>
+      <span class="runmeta"><span title="Answer language">${esc(String(result.detected_language).toUpperCase())}${result.evidence_language && result.evidence_language !== result.detected_language ? ' · from ' + esc(String(result.evidence_language).toUpperCase()) + ' document' : ''}</span><span>${seconds.toFixed(1)} s</span>
       <span class="mono" title="Trace id">${esc(result.trace_id)}</span>
       <button class="btn btn-line btn-sm" id="copyAnswer" type="button">Copy</button></span></div>
     <p class="answer ${withheld ? 'withheld' : ''}">${withheld ? esc(result.answer) : markAnswer(result.answer, claims)}</p>
@@ -762,8 +766,8 @@ $('output').addEventListener('keydown', e => {
 function renderEvidence() {
   const result = state.result;
   if (!result) return;
-  const lang = result.detected_language;
-  const byId = Object.fromEntries((state.corpus[lang] || []).map(c => [c.chunk_id, c]));
+  // Evidence can be in a different language from the answer, so look in every index.
+  const byId = Object.fromEntries(Object.values(state.corpus).flat().map(c => [c.chunk_id, c]));
   const used = new Set(result.evidence_chunk_ids || []);
   const claim = state.sel === null ? null : state.claims[state.sel];
   const vk = claim ? VERDICT[claim.verdict].k : null;

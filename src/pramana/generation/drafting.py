@@ -97,6 +97,14 @@ USER_TEMPLATES: dict[Language, str] = {
 
 ABSTENTION_TOKEN = "INSUFFICIENT_EVIDENCE"
 
+# Appended to a released answer that covers only part of the question. A fixed
+# notice, never generated, so it adds no claim to verify.
+PARTIAL_NOTES: dict[Language, str] = {
+    "en": "Note: the documents do not cover the rest of this question.",
+    "hi": "नोट: इस प्रश्न के बाकी हिस्से की जानकारी दस्तावेज़ों में नहीं है।",
+    "ta": "குறிப்பு: இந்தக் கேள்வியின் மீதிப் பகுதிக்கான தகவல் ஆவணங்களில் இல்லை.",
+}
+
 ABSTENTION_MESSAGES: dict[Language, str] = {
     "en": "The available documents do not contain enough information to answer this question.",
     "hi": "उपलब्ध दस्तावेज़ों में इस प्रश्न का उत्तर देने के लिए पर्याप्त जानकारी नहीं है।",
@@ -258,3 +266,7 @@ class DraftGenerator:
     @staticmethod
     def abstention_message(language: Language) -> str:
         return ABSTENTION_MESSAGES.get(language, ABSTENTION_MESSAGES["en"])
+
+    @staticmethod
+    def partial_note(language: Language) -> str:
+        return PARTIAL_NOTES.get(language, PARTIAL_NOTES["en"])

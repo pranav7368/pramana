@@ -166,6 +166,9 @@ class PramanaPipeline:
             actions.append(Action.ABSTAIN)
             abstained = True
             stop_reason = "unresolved_evidence"
+        partial = not abstained and executor is not None and detection.partial
+        if partial:
+            draft = Draft(text=f"{draft.text.rstrip()}\n\n{DraftGenerator.partial_note(lang)}", language=lang)
         if abstained:
             draft = Draft(text=DraftGenerator.abstention_message(lang), language=lang)
             detection = DetectionResult([])
@@ -180,7 +183,7 @@ class PramanaPipeline:
             evidence_chunk_ids=sorted({cid for v in detection.claim_verdicts for cid in v.supporting_chunk_ids}),
             latency_ms=timings, trace_id=trace_id, retrieved_chunk_ids=retrieval.chunk_ids(),
             correction_attempts=attempts, correction_regressions=regressions,
-            rolled_back=rolled_back, stop_reason=stop_reason,
+            rolled_back=rolled_back, stop_reason=stop_reason, partial=partial,
         )
 
     def _detect(self, draft: Draft, retrieval: RetrievalResult, lang: Language, query: str = "") -> DetectionResult:
@@ -216,7 +219,13 @@ class PramanaPipeline:
                           retrieval.context_text(), draft.text, lang,
                       )).normalised()
             verdict = apply_thresholds(scores, self.verifier._thresholds_for(lang))
-            if verdict is not Verdict.SUPPORTED:
+            assess = getattr(self.verifier.backend, "assess_coverage", None)
+            if (verdict is Verdict.UNVERIFIABLE and assess is not None and query
+                    and assess(retrieval.context_text(), query, draft.text, lang) == "PARTIAL"):
+                # Everything stated is supported; only part of the question is
+                # covered. Released with a label instead of withheld.
+                detection.partial = True
+            elif verdict is not Verdict.SUPPORTED:
                 detection.claim_verdicts.append(ClaimVerdict(
                     claim=Claim("answer_coverage", draft.text, lang), verdict=verdict,
                     entailment_prob=scores.entailment, contradiction_prob=scores.contradiction,

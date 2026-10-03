@@ -111,6 +111,8 @@ class AskResponse(BaseModel):
     rolled_back: bool
     stop_reason: str
     retrieved_chunk_ids: list[str]
+    partial: bool = Field(default=False, description="Every claim is supported, but the "
+                          "documents cover only part of the question.")
     evidence_language: str = Field(
         default="", description="Language of the document searched; differs from "
         "detected_language when a question is answered from a document in another language.")
@@ -151,6 +153,7 @@ def to_response(result: AssuranceResult, evidence_language: str = "") -> AskResp
         rolled_back=result.rolled_back, stop_reason=result.stop_reason,
         retrieved_chunk_ids=result.retrieved_chunk_ids,
         evidence_language=evidence_language or result.language,
+        partial=result.partial,
     )
 
 
@@ -344,7 +347,7 @@ def verify(request: VerifyRequest, http: Request) -> AskResponse:
             confidence=report,
             detection=detection,
             action_history=[],
-            stop_reason="audit_only",
+            stop_reason="audit_only", partial=detection.partial,
             retrieved_chunk_ids=retrieval.chunk_ids(),
             latency_ms={"verification": (time.perf_counter() - started) * 1000},
             evidence_chunk_ids=sorted(

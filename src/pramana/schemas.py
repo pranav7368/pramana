@@ -280,6 +280,9 @@ class ClaimVerdict:
 @dataclass(slots=True)
 class DetectionResult:
     claim_verdicts: list[ClaimVerdict] = field(default_factory=list)
+    partial: bool = False
+    """Every claim is supported, but the evidence covers only part of the
+    question. The answer may be released, labelled as partial."""
 
     @property
     def n_claims(self) -> int:
@@ -357,6 +360,8 @@ class AssuranceResult:
     correction_regressions: int = 0
     rolled_back: bool = False
     stop_reason: str = ""
+    partial: bool = False
+    """Released answer covers only part of the question; the rest is not in the evidence."""
 
     @property
     def total_latency_ms(self) -> float:

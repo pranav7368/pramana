@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Partial answers and interface themes
+
+- A fully supported answer that covers only part of the question is released
+  with a fixed notice in the question's language instead of being withheld. The
+  whole-answer check now separates faithfulness from completeness: a neutral
+  verdict is followed by a FULL / PARTIAL / UNRELATED / UNSUPPORTED judgement,
+  and a partial answer is refused when the question depends on the asker's own
+  records. Any failure keeps the answer withheld. Responses carry `partial`.
+  Behaviour before and after is recorded as P8 in `docs/08_RESULTS.md`.
+- The interface has a light, dark and system theme toggle, remembered per
+  browser and applied before the first paint.
+
 ### Cross-language questions
 
 - An uploaded document's language is detected, and questions in any enabled

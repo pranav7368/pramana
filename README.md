@@ -29,7 +29,7 @@ verification use hosted APIs while retrieval and policy decisions run locally.
 - Romanised Hindi/Tamil queries rewritten to native script for retrieval; optional
   multilingual cross-encoder reranking.
 - FastAPI service plus a browser demo with upload limits and provenance display.
-- Offline fixtures and a 665-test validation baseline (82% coverage, type-checked); fixture results are not an accuracy benchmark.
+- Offline fixtures and a 683-test validation baseline (82% coverage, type-checked); fixture results are not an accuracy benchmark.
 - A Docker image that contains the fictional sample corpus and does not require a local model or GPU.
 - A public-demo mode for free hosting: per-visitor private uploads, per-visitor and daily
   usage limits, same-origin protection, and a one-click Render Blueprint.

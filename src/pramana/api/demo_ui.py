@@ -13,6 +13,9 @@ DEMO_HTML = r"""<!doctype html>
 <meta name="theme-color" content="#f5f2ea" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#141310" media="(prefers-color-scheme: dark)">
 <title>PRAMANA — Evidence desk</title>
+<script>
+try { var t = localStorage.getItem('pramana-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231c1a15'/%3E%3Cpath d='M9 10h10M9 16h14M9 22h8' stroke='%23f4efe3' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M24 8v16' stroke='%23d9622b' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
 :root {
@@ -30,7 +33,7 @@ DEMO_HTML = r"""<!doctype html>
   --shadow:0 1px 0 rgba(28,26,21,.04), 0 8px 24px -16px rgba(28,26,21,.18);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg:#141310; --rail:#181713; --surface:#1d1b17; --sunk:#171612;
     --ink:#eee8da; --ink-2:#cfc8b8; --muted:#9b937f; --faint:#6f6858;
     --line:#2c2a23; --line-2:#3a372e;
@@ -42,6 +45,19 @@ DEMO_HTML = r"""<!doctype html>
     --shadow:0 1px 0 rgba(0,0,0,.3), 0 10px 28px -18px rgba(0,0,0,.7);
   }
 }
+:root[data-theme="dark"] {
+  --bg:#141310; --rail:#181713; --surface:#1d1b17; --sunk:#171612;
+  --ink:#eee8da; --ink-2:#cfc8b8; --muted:#9b937f; --faint:#6f6858;
+  --line:#2c2a23; --line-2:#3a372e;
+  --accent:#e2733f; --accent-ink:#141310;
+  --s:#86c290; --s-bg:#1f2b20; --s-hl:#2b4430;
+  --c:#f08a7f; --c-bg:#341d1a; --c-hl:#552a24;
+  --u:#e3b25a; --u-bg:#30271a; --u-hl:#4f3d1c;
+  --mark:#5b4a16;
+  --shadow:0 1px 0 rgba(0,0,0,.3), 0 10px 28px -18px rgba(0,0,0,.7);
+  color-scheme:dark;
+}
+:root[data-theme="light"] { color-scheme:light; }
 * { box-sizing:border-box; }
 html { -webkit-text-size-adjust:100%; }
 body { margin:0; background:var(--bg); color:var(--ink); font:14.5px/1.5 var(--ui);
@@ -75,6 +91,10 @@ button:disabled { cursor:progress; opacity:.55; }
 .links { display:flex; gap:14px; font-size:12.5px; }
 .links a { color:var(--muted); text-decoration:none; }
 .links a:hover { color:var(--ink); text-decoration:underline; text-underline-offset:3px; }
+.themebtn { width:30px; height:30px; border-radius:7px; border:1px solid var(--line-2); background:var(--surface);
+  color:var(--ink-2); display:grid; place-items:center; }
+.themebtn:hover { border-color:var(--ink); color:var(--ink); }
+.themebtn svg { width:16px; height:16px; }
 .pill { font-size:10.5px; font-weight:650; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px;
   border-radius:999px; border:1px solid var(--line-2); color:var(--ink-2); white-space:nowrap; }
 .quota { margin-top:12px; font-size:12.5px; color:var(--muted); }
@@ -303,6 +323,7 @@ kbd { font:11px var(--mono); border:1px solid var(--line-2); border-bottom-width
       <button type="button" data-lang="hi" aria-pressed="false" title="Hindi" lang="hi">हि</button>
       <button type="button" data-lang="ta" aria-pressed="false" title="Tamil" lang="ta">த</button>
     </div>
+    <button class="themebtn" id="theme" type="button" aria-label="Theme: follows the system" title="Theme: follows the system"></button>
     <div class="conn" id="conn" role="status"><i></i><span id="connText">Connecting</span></div>
   </div>
 </header>
@@ -706,6 +727,7 @@ function renderResult(result, kind) {
     <div class="section"><h4>Claims</h4><ol class="claims">${claimItems}</ol></div>`}
     <div class="section"><h4>Decision</h4><ol class="trail">${trail}</ol>
       <p class="reason">${esc(REASON[result.stop_reason] || (audit ? REASON.audit_only : ''))}</p>
+      ${result.partial ? `<div class="note">Every claim held up, but the source covers only part of the question${audit ? '.' : ', so the answer says what is missing.'}</div>` : ''}
       ${result.rolled_back ? '<div class="note">A revision scored worse than the checked answer and was discarded.</div>' : ''}
       ${!calibrated && !withheld ? '<p class="reason">The confidence score is a transparent heuristic, not a calibrated probability.</p>' : ''}
     </div>`;
@@ -796,6 +818,29 @@ function renderEvidence() {
   $('clearSel')?.addEventListener('click', () => selectClaim(state.sel));
 }
 
+/* Theme: system → light → dark, remembered per browser */
+const THEMES = ['auto', 'light', 'dark'];
+const ICONS = {
+  auto:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg>',
+  light:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  dark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg>'
+};
+const THEME_LABEL = {auto:'Theme: follows the system', light:'Theme: light', dark:'Theme: dark'};
+function applyTheme(theme) {
+  if (theme === 'auto') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  $('theme').innerHTML = ICONS[theme];
+  $('theme').setAttribute('aria-label', THEME_LABEL[theme] + '. Select to change.');
+  $('theme').title = THEME_LABEL[theme];
+}
+let theme = document.documentElement.dataset.theme || 'auto';
+applyTheme(theme);
+$('theme').addEventListener('click', () => {
+  theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  applyTheme(theme);
+  try { theme === 'auto' ? localStorage.removeItem('pramana-theme') : localStorage.setItem('pramana-theme', theme); } catch (_) {}
+});
+
 renderEmpty();
 refresh().catch(error => {
   $('conn').classList.add('down'); $('connText').textContent = 'Service unavailable';
@@ -817,7 +862,7 @@ def _script_hash(html: str) -> str:
     )
 
 
-# The single inline script is pinned by hash, so injected markup cannot run
+# Each inline script is pinned by hash, so injected markup cannot run
 # script even if an escaping bug slipped through. Inline style attributes are
 # allowed; they cannot execute code.
 DEMO_CSP = (

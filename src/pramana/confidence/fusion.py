@@ -179,6 +179,77 @@ def expected_calibration_error(
     return total
 
 
+def adaptive_calibration_error(
+    probs: Sequence[float], labels: Sequence[int], *, bins: int = 10
+) -> float:
+    """ECE over equal-mass bins.
+
+    Equal-width bins are unreliable when scores cluster -- and a fused score
+    dominated by S2 clusters near 0.1 and 0.9 -- because most bins are empty and
+    one or two carry the whole estimate. Equal-mass bins give every bin the
+    same number of examples, so report both.
+    """
+    if not probs:
+        return 0.0
+    if len(probs) != len(labels):
+        raise ValueError(f"{len(probs)} probabilities but {len(labels)} labels")
+    # Sort on the score alone and never split a run of tied scores: ordering ties
+    # by label would put the positives and negatives of one score in different
+    # bins and report miscalibration that the scores cannot express.
+    pairs = sorted(zip(probs, labels, strict=True), key=lambda pair: pair[0])
+    n = len(pairs)
+    target = n / bins
+    groups: list[list[tuple[float, int]]] = [[]]
+    for i, pair in enumerate(pairs):
+        groups[-1].append(pair)
+        if len(groups[-1]) >= target and i + 1 < n and pairs[i + 1][0] != pair[0]:
+            groups.append([])
+    total = 0.0
+    for members in groups:
+        if not members:
+            continue
+        avg_conf = sum(p for p, _ in members) / len(members)
+        accuracy = sum(y for _, y in members) / len(members)
+        total += (len(members) / n) * abs(avg_conf - accuracy)
+    return total
+
+
+def calibration_interval(
+    probs: Sequence[float],
+    labels: Sequence[int],
+    metric=expected_calibration_error,
+    *,
+    resamples: int = 2000,
+    alpha: float = 0.05,
+    seed: int = 42,
+) -> dict[str, float]:
+    """Percentile bootstrap interval for a calibration metric.
+
+    Per-language development sets are small, and an ECE of 0.06 from 40
+    examples is compatible with anything from excellent to unacceptable. The
+    H3 criterion (ECE <= 0.10) should be judged against the upper bound.
+    """
+    import random
+
+    if len(probs) != len(labels):
+        raise ValueError(f"{len(probs)} probabilities but {len(labels)} labels")
+    if not probs:
+        return {"point": 0.0, "lower": 0.0, "upper": 0.0, "resamples": 0}
+    rng = random.Random(seed)
+    n = len(probs)
+    stats = []
+    for _ in range(resamples):
+        idx = [rng.randrange(n) for _ in range(n)]
+        stats.append(metric([probs[i] for i in idx], [labels[i] for i in idx]))
+    stats.sort()
+    return {
+        "point": metric(probs, labels),
+        "lower": stats[int(alpha / 2 * resamples)],
+        "upper": stats[min(resamples - 1, int((1 - alpha / 2) * resamples))],
+        "resamples": resamples,
+    }
+
+
 def brier_score(probs: Sequence[float], labels: Sequence[int]) -> float:
     if not probs:
         return 0.0
@@ -409,7 +480,7 @@ class ConfidenceModel:
             feature_names=names,
             calibrator=TemperatureCalibrator(d.get("temperature", 1.0)),
             language=d.get("language"),
-            bands=tuple(d.get("bands", (0.75, 0.45))),  # type: ignore[arg-type]
+            bands=tuple(d.get("bands", (0.75, 0.45))),
             missing_features=tuple(d.get("missing_features", ())),
             stats={k: (v[0], v[1]) for k, v in (d.get("stats") or {}).items()},
         )

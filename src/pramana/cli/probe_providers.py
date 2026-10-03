@@ -58,7 +58,9 @@ def _request(text: str, **kw: Any) -> GenerationRequest:
     fields: dict[str, Any] = {
         "messages": (Message("user", text),),
         "model": "",
-        "max_tokens": 32,
+        # Reasoning models spend output budget before answering; at 32 tokens
+        # gpt-oss returned empty text and looked like a multilingual failure.
+        "max_tokens": 256,
         "temperature": 0.0,
     }
     fields.update(kw)  # merge, so callers can override the defaults above
@@ -131,7 +133,7 @@ def probe_provider(registry, name: str, *, measure_rpm: bool) -> dict[str, Any]:
                     Message("user", "What colour?"),
                 ),
                 model="",
-                max_tokens=16,
+                max_tokens=256,  # room for reasoning models to answer
             )
         )
         if "blue" in r.text.lower():
@@ -284,7 +286,7 @@ def main() -> int:
         print("  -> S3 is unavailable. The fusion model will be fitted on S1, S2 and S4,")
         print("     with uncertainty estimated as semantic dispersion over self-consistency")
         print("     samples. Record this in the report as a stated constraint")
-        print("     (see docs/VALIDATION.md).")
+        print("     (docs/07_IMPLEMENTATION_GUIDE.md §4.5).")
 
     weak = [
         f"{n}/{lang}"
@@ -296,7 +298,9 @@ def main() -> int:
         print(f"  multilingual concerns {', '.join(weak)}")
         print("  -> inspect the samples above before using these for hi/ta generation.")
 
-    print(f"\n  written to {args.output.relative_to(ROOT)}\n")
+    output = args.output.resolve()
+    shown = output.relative_to(ROOT.resolve()) if output.is_relative_to(ROOT.resolve()) else output
+    print(f"\n  written to {shown}\n")
     return 0 if reachable else 1
 
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pramana"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Hallucination detection and self-correction framework for multilingual enterprise RAG systems"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,7 +41,7 @@ eval = [
     "datasets>=2.20",
 ]
 serve = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "pydantic>=2.7", "pypdf>=6,<7"]
-dev = ["pytest>=8.2", "pytest-cov>=5.0", "ruff>=0.5", "rich>=13.7", "tqdm>=4.66"]
+dev = ["pytest>=8.2", "pytest-cov>=5.0", "ruff>=0.5", "mypy>=1.10", "types-PyYAML", "rich>=13.7", "tqdm>=4.66"]
 
 [project.urls]
 Repository = "https://github.com/pranav7368/pramana"
@@ -51,6 +51,9 @@ Documentation = "https://github.com/pranav7368/pramana#readme"
 [project.scripts]
 pramana-check = "pramana.cli.check_env:main"
 pramana-probe = "pramana.cli.probe_providers:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "pramana.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -66,6 +69,18 @@ markers = [
     "network: requires a live provider and real API credentials (deselect with -m 'not network')",
     "slow: loads a transformer model",
 ]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = false
+
+[tool.coverage.run]
+source = ["pramana"]
+branch = false
 
 [tool.ruff]
 line-length = 100

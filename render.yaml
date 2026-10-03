@@ -1,0 +1,40 @@
+# Render Blueprint for the hosted public demo (free instance, no credit card).
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repository, or use the
+# "Deploy to Render" button in README.md. Full guide: docs/DEPLOYMENT.md.
+services:
+  - type: web
+    name: pramana
+    runtime: docker
+    plan: free
+    # Closest Render region to India; change to oregon/frankfurt if preferred.
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: python scripts/serve_demo.py --public
+    healthCheckPath: /v1/health
+    # Deploy only after the GitHub checks (lint, types, tests, container smoke) pass.
+    autoDeployTrigger: checksPass
+    envVars:
+      # Secrets: Render asks for these once when the Blueprint is created.
+      # One key is enough; Groq is an optional failover. With neither, the demo
+      # starts on offline fixtures and says so in the interface.
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PORT
+        value: "8000"
+      # Abuse and quota controls (see docs/DEPLOYMENT.md). Every ask, audit and
+      # upload counts as one check.
+      - key: PRAMANA_VISITOR_LIMIT
+        value: "10"
+      - key: PRAMANA_VISITOR_WINDOW_S
+        value: "3600"
+      - key: PRAMANA_DAILY_LIMIT
+        value: "150"
+      - key: PRAMANA_LOG_FORMAT
+        value: json
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"

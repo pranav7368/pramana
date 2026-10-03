@@ -45,6 +45,20 @@ def test_corpus_keeps_document_boundaries_and_versions(tmp_path):
         load_corpus(tmp_path, ("hi",))
 
 
+def test_document_ids_do_not_depend_on_line_endings(tmp_path):
+    """A Windows checkout (CRLF) and a Linux checkout (LF) must cite the same chunk ids,
+    or gold labels written on one machine fail validation on the other."""
+    ids = []
+    for ending in ("\n", "\r\n"):
+        folder = tmp_path / ending.encode().hex() / "en"
+        folder.mkdir(parents=True)
+        (folder / "claims.md").write_bytes(ending.join(["# Claims", "", RIGHT]).encode())
+        chunks = load_corpus(folder.parent, ("en",))["en"]
+        assert not any("\r" in c.text for c in chunks)
+        ids.append([c.chunk_id for c in chunks])
+    assert ids[0] == ids[1]
+
+
 @pytest.fixture
 def pilot_client(monkeypatch, tmp_path):
     cfg = Settings(mode="pilot", api_key=KEY, corpus_dir=tmp_path, providers=("groq",),

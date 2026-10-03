@@ -71,11 +71,11 @@ def scan_bytes(path: Path, data: bytes) -> list[str]:
     return [label for label, pattern in SECRET_PATTERNS.items() if pattern.search(data)]
 
 
-def scan_worktree() -> tuple[list[tuple[str, str]], dict[str, int]]:
+def scan_worktree(paths: bool = True) -> tuple[list[tuple[str, str]], dict[str, int]]:
     violations: list[tuple[str, str]] = []
     matches: dict[str, int] = {}
     for relative in candidate_paths():
-        reason = blocked_path(relative)
+        reason = blocked_path(relative) if paths else None
         if reason:
             violations.append((relative.as_posix(), reason))
             continue
@@ -107,10 +107,14 @@ def main() -> int:
     parser.add_argument(
         "--history", action="store_true", help="also scan every reachable Git blob"
     )
+    parser.add_argument(
+        "--secrets-only", action="store_true",
+        help="private archive: allow private directories, still refuse credentials",
+    )
     args = parser.parse_args()
 
     try:
-        violations, counts = scan_worktree()
+        violations, counts = scan_worktree(paths=not args.secrets_only)
         if args.history:
             history_violations, history_counts = scan_history()
             violations.extend(history_violations)

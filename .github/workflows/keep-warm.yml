@@ -1,0 +1,29 @@
+name: Public demo uptime
+
+# Opt-in. Set the repository variable PUBLIC_DEMO_URL (Settings -> Secrets and
+# variables -> Actions -> Variables), e.g. https://pramana.onrender.com, to enable.
+# The ping keeps a free Render instance from sleeping during the day and fails
+# the run if the demo is down. The schedule below keeps it awake about 16 hours
+# a day, roughly 500 of Render's 750 free monthly hours; widening it to 24 hours
+# would use about 744, leaving nothing for other free services.
+on:
+  schedule:
+    # Every 10 minutes, 03:00-18:59 UTC (08:30-00:29 IST).
+    - cron: "*/10 3-18 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    if: ${{ vars.PUBLIC_DEMO_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check health
+        env:
+          URL: ${{ vars.PUBLIC_DEMO_URL }}
+        run: |
+          # A sleeping instance takes about a minute to wake, so allow retries.
+          curl --fail --silent --show-error --retry 6 --retry-delay 15 --retry-all-errors \
+            --max-time 30 "${URL%/}/v1/health"

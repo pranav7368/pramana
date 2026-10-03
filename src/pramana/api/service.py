@@ -1,6 +1,6 @@
 """FastAPI service exposing the assurance layer.
 
-Deliverable **D6**. Two audiences:
+Two audiences:
 
 * A **demo** that makes the contribution visible -- per-claim verdicts, evidence
   citations, the correction trail. A confidence number alone is not convincing;
@@ -19,13 +19,23 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 from starlette.concurrency import run_in_threadpool
 
+from pramana import __version__
+from pramana.api.observability import RequestMetrics, configure_logging
+from pramana.api.quota import UsageLimiter
 from pramana.api.runtime import build_pipeline
 from pramana.api.security import ServiceBoundary
+from pramana.api.sessions import (
+    DEFAULT_SESSION,
+    SESSION_HEADER,
+    SessionStore,
+    session_id,
+    session_retriever,
+)
 from pramana.config.settings import Settings
 from pramana.generation.budget import request_budget
 from pramana.schemas import AssuranceResult, Language
@@ -34,7 +44,7 @@ log = logging.getLogger(__name__)
 
 try:
     from fastapi import Depends, FastAPI, HTTPException, Request
-    from fastapi.responses import HTMLResponse
+    from fastapi.responses import HTMLResponse, PlainTextResponse
     from pydantic import BaseModel, ConfigDict, Field
 except ImportError as exc:  # pragma: no cover - optional extra
     raise RuntimeError(
@@ -150,14 +160,17 @@ _state: dict[str, Any] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = Settings.from_env()
+    configure_logging(settings.log_format)
     if settings.pilot:
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)
     pipeline, router, offline = build_pipeline(settings=settings)
     _state.update(pipeline=pipeline, router=router, offline=offline, settings=settings,
                   slots=threading.BoundedSemaphore(settings.max_concurrent),
-                  demo_original_retrievers=dict(pipeline.retriever.retrievers),
-                  demo_documents={})
+                  sessions=SessionStore(settings.max_sessions, settings.session_ttl_s),
+                  limiter=UsageLimiter(settings.visitor_limit, settings.visitor_window_s,
+                                       settings.daily_limit),
+                  metrics=RequestMetrics())
     log.info("PRAMANA ready mode=%s offline=%s", settings.mode, offline)
     try:
         yield
@@ -173,7 +186,7 @@ app = FastAPI(
         "Hallucination detection and self-correction for multilingual enterprise RAG. "
         "Every claim is verified against retrieved evidence and cited."
     ),
-    version="0.1.0",
+    version=__version__,
     lifespan=lifespan,
 )
 
@@ -182,13 +195,57 @@ app.add_middleware(ServiceBoundary, state=_state)
 
 
 def inference_slot():
+    # A public demo queues briefly instead of failing the moment two visitors overlap.
     slots = _state.get("slots")
-    if slots is None or not slots.acquire(blocking=False):
+    wait = _state["settings"].queue_wait_s if "settings" in _state else 0
+    acquired = slots is not None and (slots.acquire(timeout=wait) if wait > 0 else slots.acquire(blocking=False))
+    if not acquired:
         raise HTTPException(503, "Inference capacity is busy; retry later", headers={"Retry-After": "2"})
     try:
         yield
     finally:
         slots.release()
+
+
+def visitor(http: Request) -> str:
+    """Client address used for per-visitor limits; never logged or returned."""
+    header = _state["settings"].client_ip_header
+    if header:
+        value = http.headers.get(header, "").split(",")[0].strip()
+        if value:
+            return value[:64]
+    return http.client.host if http.client else "unknown"
+
+
+def usage_quota(http: Request) -> None:
+    limiter: UsageLimiter = _state["limiter"]
+    if not limiter.enabled:
+        return
+    decision = limiter.consume(visitor(http))
+    if not decision.allowed:
+        raise HTTPException(429, decision.detail, headers={"Retry-After": str(decision.retry_after_s)})
+
+
+def visitor_session(http: Request, *, required: bool = False) -> str:
+    """The caller's document session. Public uploads must name their own session."""
+    raw = http.headers.get(SESSION_HEADER)
+    key = session_id(raw)
+    if key is None:
+        if raw is not None or (required and _state["settings"].public):
+            raise HTTPException(400, "A valid X-Pramana-Session header is required")
+        return DEFAULT_SESSION
+    return key
+
+
+def session_pipeline(http: Request):
+    """The shared pipeline, searching this visitor's uploads where they have any."""
+    pipeline = _state["pipeline"]
+    if _state["settings"].pilot:
+        return pipeline, set()
+    found = _state["sessions"].get(visitor_session(http))
+    retriever = session_retriever(pipeline.retriever, found)
+    uploaded = set(found.documents) if found is not None else set()
+    return (pipeline if retriever is pipeline.retriever else replace(pipeline, retriever=retriever)), uploaded
 
 
 def request_language(query, language, pipeline):
@@ -208,6 +265,7 @@ def request_language(query, language, pipeline):
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
+        "version": __version__,
         "offline": _state.get("offline", True),
         "languages": _state["pipeline"].retriever.languages if "pipeline" in _state else [],
         "note": (
@@ -219,18 +277,19 @@ def health() -> dict[str, Any]:
     }
 
 
-@app.post("/v1/ask", response_model=AskResponse, dependencies=[Depends(inference_slot)])
-def ask(request: AskRequest) -> AskResponse:
+@app.post("/v1/ask", response_model=AskResponse,
+          dependencies=[Depends(usage_quota), Depends(inference_slot)])
+def ask(request: AskRequest, http: Request) -> AskResponse:
     """Full pipeline: retrieve, generate, verify, score, correct."""
-    pipeline = _state.get("pipeline")
-    if pipeline is None:
+    if _state.get("pipeline") is None:
         raise HTTPException(503, "pipeline not initialised")
 
     cfg = _state["settings"]
     if cfg.pilot and not request.assurance:
         raise HTTPException(422, "Pilot answers require assurance; use /v1/verify for audits")
+    pipeline, uploaded = session_pipeline(http)
     lang = request_language(request.query, request.language, pipeline)
-    if _state["offline"] and lang in _state["demo_documents"]:
+    if _state["offline"] and lang in uploaded:
         raise HTTPException(422, "Answering an uploaded document needs a live provider; offline audit is available")
     try:
         with request_budget(cfg.max_provider_calls, cfg.request_budget_s):
@@ -245,16 +304,17 @@ def ask(request: AskRequest) -> AskResponse:
     return to_response(result)
 
 
-@app.post("/v1/verify", response_model=AskResponse, dependencies=[Depends(inference_slot)])
-def verify(request: VerifyRequest) -> AskResponse:
+@app.post("/v1/verify", response_model=AskResponse,
+          dependencies=[Depends(usage_quota), Depends(inference_slot)])
+def verify(request: VerifyRequest, http: Request) -> AskResponse:
     """Audit an answer produced elsewhere. Retrieval and verification only.
 
     The realistic adoption path: point this at an existing chatbot's logs to
     measure its hallucination rate without changing it.
     """
-    pipeline = _state.get("pipeline")
-    if pipeline is None:
+    if _state.get("pipeline") is None:
         raise HTTPException(503, "pipeline not initialised")
+    pipeline, _ = session_pipeline(http)
 
     from pramana.confidence.fusion import collect_features
     from pramana.schemas import Draft
@@ -291,11 +351,11 @@ def verify(request: VerifyRequest) -> AskResponse:
 
 
 @app.get("/v1/corpus")
-def corpus() -> dict[str, list[dict[str, Any]]]:
+def corpus(http: Request) -> dict[str, list[dict[str, Any]]]:
     """The indexed chunks. The demo shows these so a citation can be checked."""
     if not _state["settings"].expose_corpus:
         raise HTTPException(404, "Corpus browsing is disabled")
-    pipeline = _state["pipeline"]
+    pipeline, _ = session_pipeline(http)
     return {
         lang: [
             {"chunk_id": c.chunk_id, "text": c.text,
@@ -313,17 +373,24 @@ def _require_demo() -> None:
 
 
 @app.get("/v1/demo/documents")
-def demo_documents() -> dict[str, Any]:
-    """Show which language indexes use a faculty upload versus sample policies."""
+def demo_documents(http: Request) -> dict[str, Any]:
+    """Show which language indexes use an uploaded document versus the sample policy."""
     _require_demo()
-    pipeline = _state["pipeline"]
+    cfg = _state["settings"]
+    pipeline, _ = session_pipeline(http)
+    found = _state["sessions"].get(visitor_session(http))
+    uploaded = found.documents if found is not None else {}
+    limiter: UsageLimiter = _state["limiter"]
     return {
         "offline": _state["offline"],
-        "provider": "stub" if _state["offline"] else ", ".join(_state["settings"].providers),
+        "public": cfg.public,
+        "provider": "stub" if _state["offline"] else ", ".join(cfg.providers),
         "confidence_fitted": bool(pipeline.confidence.feature_names),
-        "api_embedding_model": _state["settings"].api_embedding_model,
+        "api_embedding_model": cfg.api_embedding_model,
+        "limits": limiter.remaining(visitor(http)) if limiter.enabled else None,
+        "session_ttl_s": cfg.session_ttl_s,
         "documents": {
-            lang: _state["demo_documents"][lang].summary() if lang in _state["demo_documents"]
+            lang: uploaded[lang].summary() if lang in uploaded
             else {"name": "Built-in fictional policy", "language": lang,
                   "pages": None, "chunks": retriever.size, "sample": True}
             for lang, retriever in pipeline.retriever.retrievers.items()
@@ -331,15 +398,16 @@ def demo_documents() -> dict[str, Any]:
     }
 
 
-@app.post("/v1/demo/documents", dependencies=[Depends(inference_slot)])
+@app.post("/v1/demo/documents", dependencies=[Depends(usage_quota), Depends(inference_slot)])
 async def upload_demo_document(
     request: Request, filename: str, language: Language = "en",
 ) -> dict[str, Any]:
-    """Replace one language's demo index with an uploaded text PDF/Markdown/text file."""
+    """Index an uploaded text PDF/Markdown/text file for this visitor's session only."""
     _require_demo()
     from pramana.api.demo_documents import DocumentError, prepare_document
     from pramana.retrieval.hybrid import HybridRetriever
 
+    key = visitor_session(request, required=True)
     if language not in _state["pipeline"].retriever.languages:
         raise HTTPException(422, "This language is not enabled")
     try:
@@ -353,7 +421,7 @@ async def upload_demo_document(
         from pramana.retrieval.dense import SentenceTransformerIndex
         dense = SentenceTransformerIndex(old.dense.model_name, encoder=old.dense.encoder)
     replacement = HybridRetriever(language=language, dense=dense, top_k=old.top_k,
-                                  candidate_k=old.candidate_k)
+                                  candidate_k=old.candidate_k, reranker=old.reranker)
     cfg = _state["settings"]
     try:
         with request_budget(cfg.max_provider_calls, cfg.request_budget_s):
@@ -361,32 +429,27 @@ async def upload_demo_document(
     except Exception as exc:
         log.error("document indexing failed type=%s", type(exc).__name__)
         raise HTTPException(503, "Document indexing service unavailable; retry later") from None
-    pipeline.retriever.add_language(language, replacement)
-    _state["demo_documents"][language] = prepared
+    _state["sessions"].put(key, language, replacement, prepared)
     return prepared.summary()
 
 
-@app.delete("/v1/demo/documents", dependencies=[Depends(inference_slot)])
-def reset_demo_documents(language: Language | None = None) -> dict[str, str]:
-    """Restore one or all original fictional indexes without restarting the process."""
+@app.delete("/v1/demo/documents")
+def reset_demo_documents(http: Request, language: Language | None = None) -> dict[str, str]:
+    """Drop this visitor's uploads for one or all languages, restoring the samples."""
     _require_demo()
-    pipeline = _state["pipeline"]
-    originals = _state["demo_original_retrievers"]
-    if language is not None and language not in originals:
+    if language is not None and language not in _state["pipeline"].retriever.languages:
         raise HTTPException(422, "This language is not enabled")
-    for selected in (originals if language is None else (language,)):
-        pipeline.retriever.add_language(selected, originals[selected])
-        _state["demo_documents"].pop(selected, None)
+    _state["sessions"].reset(visitor_session(http), language)
     return {"status": "sample policies restored"}
 
 
 @app.get("/", response_class=HTMLResponse)
-def demo() -> str:
+def demo() -> HTMLResponse:
     if _state["settings"].pilot:
         raise HTTPException(404, "Use the authenticated pilot API")
-    from pramana.api.demo_ui import DEMO_HTML
+    from pramana.api.demo_ui import DEMO_CSP, DEMO_HTML
 
-    return DEMO_HTML
+    return HTMLResponse(DEMO_HTML, headers={"Content-Security-Policy": DEMO_CSP})
 
 
 @app.get("/v1/ready")
@@ -401,6 +464,8 @@ def ready():
         "confidence_fitted": bool(pipeline.confidence.feature_names),
         "retrieval": "hybrid" if (_state["settings"].dense_model or _state["settings"].api_embedding_model) else "sparse",
         "api_embedding_model": _state["settings"].api_embedding_model or None,
+        "reranker_model": _state["settings"].reranker_model or None,
+        "query_transliteration": pipeline.retriever.query_variants is not None,
         "languages": pipeline.retriever.languages,
         "chunks": {lang: r.size for lang, r in pipeline.retriever.retrievers.items()},
         "note": "Readiness checks loaded components; it does not certify model accuracy or provider availability.",
@@ -429,8 +494,22 @@ def runtime_status():
         ],
         "counters": asdict(stats) if stats else {},
         "embedding_api_requests": max((getattr(e, "requests", 0) for e in embedding_encoders), default=0),
+        "usage": _state["limiter"].snapshot(),
+        "active_sessions": len(_state["sessions"]),
         "note": "Process counters, not remaining account quota. Confidence is heuristic unless fitted.",
     }
+
+
+@app.get("/v1/metrics", response_class=PlainTextResponse)
+def metrics() -> PlainTextResponse:
+    """Prometheus text exposition: request counts, latency and router counters.
+
+    Behind the same bearer-token boundary as the other routes in pilot mode.
+    """
+    router = _state.get("router")
+    stats = getattr(router, "stats", None)
+    body = _state["metrics"].render(asdict(stats) if stats else {})
+    return PlainTextResponse(body, media_type="text/plain; version=0.0.4")
 
 
 @app.exception_handler(Exception)

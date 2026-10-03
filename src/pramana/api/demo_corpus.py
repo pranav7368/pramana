@@ -5,7 +5,8 @@ conditions, an explicit negation, an identifier for exact-match retrieval, and a
 gap (nothing about WiFi or office facilities) so abstention can be demonstrated
 rather than described.
 
-This is *not* a human-reviewed evaluation corpus. The Hindi and Tamil text has not been through
+This is *not* the evaluation corpus — that is specified in
+``docs/05_DATASET_SPEC.md``. The Hindi and Tamil text here has not been through
 the translation QC pipeline and must not be used for measurement.
 """
 

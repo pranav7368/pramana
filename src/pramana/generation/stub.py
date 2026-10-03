@@ -151,7 +151,7 @@ FIXTURES: list[Fixture] = [
         defect="intrinsic: negation dropped",
         notes=(
             "Negation loss is the single most damaging error class, and the one that "
-            "machine translation introduces most often."
+            "machine translation introduces most often — see 03_PROPOSAL.md §7.1."
         ),
     ),
     Fixture(

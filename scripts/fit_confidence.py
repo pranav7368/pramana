@@ -7,7 +7,14 @@ import json
 import math
 from pathlib import Path
 
-from pramana.confidence.fusion import FEATURE_ORDER, ConfidenceModel, expected_calibration_error
+from pramana.confidence.fusion import (
+    FEATURE_ORDER,
+    ConfidenceModel,
+    adaptive_calibration_error,
+    brier_score,
+    calibration_interval,
+    expected_calibration_error,
+)
 
 
 def fit_reviews(train: list[dict], dev: list[dict], language: str) -> tuple[ConfidenceModel, dict]:
@@ -50,6 +57,10 @@ def fit_reviews(train: list[dict], dev: list[dict], language: str) -> tuple[Conf
     calibrated = [model.score(r["features"]).score for r in dev]
     return model, {"language": language, "train_count": len(train), "dev_count": len(dev),
                    "dev_ece": expected_calibration_error(calibrated, labels),
+                   "dev_ece_95ci": calibration_interval(calibrated, labels),
+                   "dev_adaptive_ece": adaptive_calibration_error(calibrated, labels),
+                   "dev_brier": brier_score(calibrated, labels),
+                   "feature_importance": model.importance(),
                    "heldout_test_evaluated": False,
                    "note": "Dev calibration is not a held-out quality result. Review attribution is not identity verification."}
 

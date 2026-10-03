@@ -214,7 +214,7 @@ providers:
     notes: >
       Deterministic fixtures carrying planted hallucinations with known ground
       truth. Makes the detection and correction stages unit-testable on a laptop
-      with no GPU and no internet. See README.md for the offline path.
+      with no GPU and no internet. See docs/07_IMPLEMENTATION_GUIDE.md §6.
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Routing policy

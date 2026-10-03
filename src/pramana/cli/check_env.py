@@ -61,7 +61,7 @@ def check_hardware(api_only: bool = False) -> None:
         if sys.platform == "win32":
             stat = MEMORYSTATUSEX()
             stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
-            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))  # type: ignore[attr-defined]
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
             total_gb = stat.ullTotalPhys / 1024**3
             free_gb = stat.ullAvailPhys / 1024**3
         else:
@@ -173,7 +173,7 @@ def check_providers() -> None:
         line(FAIL, "provider registry", f"{exc}")
         return
 
-    line(OK, "provider registry", f"{len(registry.specs)} entries from {registry.source.name}")
+    line(OK, "provider registry", f"{len(registry.specs)} entries from {registry.source.name if registry.source else 'built-in'}")
 
     for name, status in registry.diagnose():
         if status.startswith("ready"):
@@ -293,7 +293,7 @@ def main() -> int:
     print(f"  {_status.count(OK)} ok · {warns} warnings · {fails} failures")
     if fails:
         print("\n  Fix the failures above before proceeding.")
-        print("  See QUICKSTART.md for troubleshooting.")
+        print("  See docs/07_IMPLEMENTATION_GUIDE.md §9 for troubleshooting.")
         return 1
     if warns:
         print("\n  Usable. Warnings are non-blocking — optional dependencies or")

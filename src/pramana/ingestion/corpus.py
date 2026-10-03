@@ -30,9 +30,12 @@ def load_corpus(
             raw = path.read_bytes()
             if len(raw) > max_file_bytes:
                 raise ValueError("Corpus file exceeds size limit")
-            text = raw.decode("utf-8-sig")
+            # Hash LF-normalised content so a document keeps its id whether Git
+            # checked it out with CRLF (Windows) or LF (Linux, containers).
+            normalised = raw.replace(b"\r\n", b"\n")
+            text = normalised.decode("utf-8-sig")
             relative = path.relative_to(root).as_posix()
-            digest = hashlib.sha256(raw).hexdigest()
+            digest = hashlib.sha256(normalised).hexdigest()
             loaded = chunk_text(
                 text, doc_id=f"{relative}@{digest[:12]}", language=language,
                 metadata={"source": relative, "sha256": digest},

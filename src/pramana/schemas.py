@@ -5,7 +5,7 @@ no heavy imports means each stage can be tested in isolation against fixtures,
 without loading a model or touching the network -- which is what makes this
 project developable on a laptop with no GPU.
 
-See README.md for the pipeline architecture.
+Corresponds to docs/04_SYSTEM_ARCHITECTURE.md §3.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class Verdict(StrEnum):
 
 
 class Action(StrEnum):
-    """Correction actions used by the bounded policy engine."""
+    """Correction actions. See docs/04_SYSTEM_ARCHITECTURE.md §4.6."""
 
     ACCEPT = "ACCEPT"
     REGENERATE = "REGENERATE"

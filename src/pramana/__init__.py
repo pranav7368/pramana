@@ -6,7 +6,7 @@ decomposes generated answers into atomic claims, verifies each against retrieved
 evidence, produces a calibrated confidence score, and applies evidence-guided
 correction or abstention.
 
-See the root README and docs/11_ENTERPRISE_PILOT.md for the design.
+See docs/04_SYSTEM_ARCHITECTURE.md for the design.
 """
 
 __version__ = "0.1.0"

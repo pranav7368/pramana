@@ -134,10 +134,12 @@ class PramanaPipeline:
                     True, False, detection_after=candidate_detection,
                 )
             else:
+                def reverify(text: str, evidence: RetrievalResult = candidate_retrieval) -> DetectionResult:
+                    return self._detect(Draft(text=text, language=lang), evidence, lang, query)
+
                 outcome = executor.apply(
                     action, draft, candidate_detection, candidate_retrieval,
-                    reverify=lambda text, evidence=candidate_retrieval: self._detect(Draft(text=text, language=lang), evidence, lang, query),
-                    language=lang,
+                    reverify=reverify, language=lang,
                 )
             timings["correction"] = timings.get("correction", 0.0) + _ms(t0)
             actions.append(action)

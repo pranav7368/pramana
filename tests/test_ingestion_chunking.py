@@ -67,7 +67,7 @@ class TestSentenceSplitting:
         assert "Rs. 500" in out[0]
 
     def test_does_not_split_on_titles(self):
-        out = split_sentences("Contact Dr. Anita for approval. She will respond.", "en")
+        out = split_sentences("Contact Dr. Rao for approval. She will respond.", "en")
         assert len(out) == 2
 
     def test_empty_and_whitespace_input(self):

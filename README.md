@@ -9,6 +9,7 @@ localhost pilot on a low-memory machine: generation, claim decomposition, and
 verification use hosted APIs while retrieval and policy decisions run locally.
 
 [![Checks](https://github.com/pranav7368/pramana/actions/workflows/checks.yml/badge.svg)](https://github.com/pranav7368/pramana/actions/workflows/checks.yml)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/pranav7368/pramana)
 
 > **Current status:** the offline pipeline, API, Docker quickstart, security
 > boundaries, and pilot controls are implemented and tested. Accuracy,
@@ -21,12 +22,30 @@ verification use hosted APIs while retrieval and policy decisions run locally.
 - BM25/vector retrieval, optional Google API embeddings, and evidence citations.
 - Provider routing with bounded quotas, timeouts, caching, validation, and failover.
 - Conservative actions: accept, regenerate, re-retrieve, prune, or abstain.
+- One verification request per claim (all evidence chunks judged in a single call), and
+  corrections that are rolled back if they drop supported claims.
+- Romanised Hindi/Tamil queries rewritten to native script for retrieval; optional
+  multilingual cross-encoder reranking.
 - FastAPI service plus a browser demo with upload limits and provenance display.
-- Offline fixtures and a 570-test validation baseline; fixture results are not an accuracy benchmark.
+- Offline fixtures and a 638-test validation baseline (82% coverage, type-checked); fixture results are not an accuracy benchmark.
 - A Docker image that contains the fictional sample corpus and does not require a local model or GPU.
+- A public-demo mode for free hosting: per-visitor private uploads, per-visitor and daily
+  usage limits, same-origin protection, and a one-click Render Blueprint.
 
-The live profile is intentionally single-worker and single-tenant. It is a
-research/pilot foundation, not a turnkey public production service.
+The live profile is intentionally single-worker. The public demo is a showcase with
+abuse controls, not a multi-tenant service for confidential documents.
+
+## Public demo deployment (free)
+
+The repository deploys as-is to a free Render web service; no credit card is needed.
+Click **Deploy to Render** above (or **New → Blueprint** in Render), paste a free
+[Google AI Studio](https://aistudio.google.com/apikey) key when asked, and open the
+`https://<name>.onrender.com` URL once the build finishes. Render redeploys after each
+push that passes CI.
+
+The same image runs anywhere with `python scripts/serve_demo.py --public`. Hosting
+options, limits, configuration and troubleshooting:
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Fastest path: Docker Desktop
 
@@ -94,7 +113,8 @@ question → language/script → retrieval → generation → atomic claims
 
 The assurance layer is provider-agnostic. A YAML provider entry can point to a
 compatible hosted endpoint; provider-specific wire formats use an adapter. See
-[LLM integration](docs/10_LLM_INTEGRATION.md) and the
+[LLM integration](docs/10_LLM_INTEGRATION.md),
+[implementation guide](docs/07_IMPLEMENTATION_GUIDE.md), and the
 [pilot runbook](docs/11_ENTERPRISE_PILOT.md).
 
 ## Reproduce the checks
@@ -102,11 +122,19 @@ compatible hosted endpoint; provider-specific wire formats use an adapter. See
 The default test command is offline and needs no API key:
 
 ```powershell
-python -m pip install -r requirements-pilot.txt
+python -m pip install -r requirements-dev.txt
 python -m pip install --no-deps -e .
 python -m ruff check src scripts tests
-python -m pytest -o addopts='' -q -m "not network and not slow"
+python -m mypy src/pramana
+python -m pytest -o addopts='' -q -m "not network and not slow" --cov=pramana
 python scripts/check_publication.py
+```
+
+Before running experiments, validate the question set against the dataset
+specification (`docs/05_DATASET_SPEC.md`):
+
+```powershell
+python scripts/validate_dataset.py examples/eval/questions.example.jsonl --corpus examples/corpus --pilot
 ```
 
 For the offline Docker smoke path (Linux engine):
@@ -117,8 +145,10 @@ python scripts/validate_container_http.py --url http://127.0.0.1:8000 --out repo
 docker compose -p pramana-smoke -f compose.demo.yaml down -v
 ```
 
-The CI workflow runs lint, offline tests, package installation, publication
-checks, and an offline container HTTP smoke test on every push and pull request.
+The CI workflow runs lint, type checking, offline tests with a coverage gate on
+Python 3.11–3.13, package installation, publication checks, an offline container
+HTTP smoke test and a container vulnerability scan on every push and pull request;
+CodeQL runs separately.
 Live-provider validation is deliberately opt-in and is not run in CI.
 
 ## Evidence and limitations
@@ -130,7 +160,7 @@ known gaps without presenting fixture smoke tests as model-quality results:
 - confidence remains heuristic until an independent human-reviewed calibration artifact is supplied;
 - no claim is made about universal multilingual accuracy or benchmark superiority;
 - live API quality depends on provider models, quotas, outages, and moving aliases;
-- TLS/SSO/RBAC, multi-tenant isolation, external ingress, threat modelling, and production soak testing remain deployment work;
+- the public demo relies on the host for TLS, keeps uploads in memory only, and has no user accounts; SSO/RBAC, multi-tenant data isolation, threat modelling, and production soak testing remain deployment work;
 - human review is required before a decision affects a person, customer, or regulated workflow.
 
 The private arXiv working draft is intentionally not part of the software

@@ -216,7 +216,8 @@ class TestLanguageBreakdown:
         assert lang == "ta" and gap < -0.3
 
     def test_success_criterion_is_checked(self):
-        """The proposed comparison threshold is 10% relative to English."""
+        """01_PROBLEM_STATEMENT.md §4 requires Hindi and Tamil within 10% relative
+        of English."""
         ok = LanguageBreakdown(metric="f1", by_language={"en": 0.80, "hi": 0.76, "ta": 0.74})
         bad = LanguageBreakdown(metric="f1", by_language={"en": 0.80, "hi": 0.76, "ta": 0.60})
         assert ok.meets_criterion()

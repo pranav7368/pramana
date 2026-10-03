@@ -19,6 +19,7 @@ dominate rank 2 so heavily that the second retriever could never contribute.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -200,6 +201,9 @@ class MultilingualRetriever:
 
     retrievers: dict[Language, HybridRetriever] = field(default_factory=dict)
     fallback: Language = "en"
+    query_variants: Callable[[str, Language], list[str]] | None = None
+    """Optional native-script rewrites for Romanised Hindi/Tamil queries
+    (see ``query_rewrite``). The original query is always searched as well."""
 
     def add_language(self, language: Language, retriever: HybridRetriever) -> None:
         if retriever.language != language:
@@ -227,7 +231,15 @@ class MultilingualRetriever:
                     f"no retriever for {lang!r} and no {self.fallback!r} fallback configured"
                 )
 
-        return retriever.retrieve(query, top_k=top_k)
+        from pramana.retrieval.query_rewrite import fuse_results, needs_native_variant
+
+        if self.query_variants is None or not needs_native_variant(query, retriever.language):
+            return retriever.retrieve(query, top_k=top_k)
+        variants = [v for v in dict.fromkeys(self.query_variants(query, retriever.language)) if v != query]
+        if not variants:
+            return retriever.retrieve(query, top_k=top_k)
+        k = top_k or retriever.top_k
+        return fuse_results([retriever.retrieve(v, top_k=k) for v in (query, *variants)], k)
 
     @property
     def languages(self) -> list[Language]:

@@ -1,6 +1,6 @@
 """Evaluation metrics — the numbers that go in the report.
 
-Written dependency-free so
+Implements `docs/06_EVALUATION_PROTOCOL.md` §2 and §6. Written dependency-free so
 the harness runs in the base install on the dev laptop.
 
 Two properties are enforced by construction rather than left to discipline:
@@ -417,8 +417,9 @@ class LanguageBreakdown:
     """Per-language values with the cross-lingual gap made explicit.
 
     The gap is computed rather than left for a reader to notice: it is the number
-    multilingual comparisons turn on. Report the per-language gap directly
-    rather than hiding it in an overall average.
+    RQ4 turns on, and success criteria are stated in terms of it
+    (`01_PROBLEM_STATEMENT.md` §4 requires Hindi and Tamil within 10% relative of
+    English).
     """
 
     metric: str
@@ -458,9 +459,9 @@ class LanguageBreakdown:
                 continue
             gap = "" if lang == self.reference else f"  ({self.gap(lang):+.1%} vs {self.reference})"
             rows.append(f"  {lang}  {self.by_language[lang]:.3f}{gap}")
-        lang, gap = self.worst_gap
+        worst_lang, worst_gap = self.worst_gap
         rows.append(
-            f"  worst gap: {lang} {gap:+.1%} — "
+            f"  worst gap: {worst_lang} {worst_gap:+.1%} — "
             f"{'within' if self.meets_criterion() else 'EXCEEDS'} the 10% criterion"
         )
         return "\n".join(rows)

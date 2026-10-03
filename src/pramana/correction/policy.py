@@ -107,6 +107,15 @@ class CorrectionPolicy:
 
     enabled_actions: frozenset[Action] = frozenset(Action)
 
+    preserve_supported: bool = True
+    """A revision may not drop claims the evidence already supported.
+
+    The verdict-profile ordering prefers fewer unverifiable claims, so without
+    this guard a rewrite from 3 supported + 1 unverifiable to 1 supported counts
+    as an improvement: the answer got "cleaner" by saying less. Live mode's
+    whole-answer coverage check catches some of these; this rule catches them
+    with any verifier."""
+
     def decide(
         self,
         detection: DetectionResult,
@@ -354,6 +363,10 @@ class CorrectionExecutor:
 
         # A decomposer returning no claims is not proof that a factual answer was fixed.
         accepted = after.total > 0 and after.is_better_than(before)
+        if accepted and self.policy.preserve_supported and after.supported < before.supported:
+            log.info("rejecting %s: supported claims fell from %d to %d",
+                     action.value, before.supported, after.supported)
+            accepted = False
         regressed = before.is_better_than(after)
         outcome = self._outcome(candidate, action, before, after, accepted, regressed, started)
         outcome.detection_after = detection_after
@@ -428,7 +441,7 @@ class RegressionTracker:
     Reported alongside the improvement figure. A correction stage that improves
     60% of answers and degrades 20% is a very different system from one that
     improves 45% and degrades none, and the headline number alone cannot tell them
-    apart. Both rates must be reported separately.
+    apart (`03_PROPOSAL.md` §4.4).
     """
 
     attempts: int = 0

@@ -325,7 +325,7 @@ class TestKeywordBackend:
     def test_negation_from_an_unrelated_sentence_is_ignored(self):
         """The mirror case: a "not" elsewhere in the chunk must not invent a
         contradiction. This one rejected correct corrections and inflated the
-        regression rate in controlled fixtures."""
+        regression rate -- see docs/08_RESULTS.md §P6(c)."""
         s = KeywordNLIBackend().score(
             "Claims are rejected if submitted more than 30 days after the discharge date. "
             "Maternity benefits are not available during the first policy year.",

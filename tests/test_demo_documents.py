@@ -1,4 +1,4 @@
-"""Document upload changes the evidence used by the faculty demo, not pilot state."""
+"""Document upload changes the evidence used by the local UI, not pilot state."""
 
 from __future__ import annotations
 
@@ -70,18 +70,18 @@ def test_scanned_pdf_is_rejected():
 def test_upload_audit_and_reset_are_consistent(client):
     original = client.get("/v1/corpus").json()["en"]
     uploaded = client.post(
-        "/v1/demo/documents?filename=faculty-policy.pdf&language=en",
+        "/v1/demo/documents?filename=sample-policy.pdf&language=en",
         content=text_pdf("Rejected claims may be appealed within 60 days of the notice."),
         headers={"Content-Type": "application/pdf"},
     )
     assert uploaded.status_code == 200
     assert uploaded.json()["pages"] == 1
     corpus = client.get("/v1/corpus").json()["en"]
-    assert all(c["source"] == "faculty-policy.pdf" and c["page"] == 1 for c in corpus)
+    assert all(c["source"] == "sample-policy.pdf" and c["page"] == 1 for c in corpus)
     assert {c["chunk_id"] for c in original}.isdisjoint({c["chunk_id"] for c in corpus})
     state = client.get("/v1/demo/documents").json()
     assert state["api_embedding_model"] == ""
-    assert state["documents"]["en"]["name"] == "faculty-policy.pdf"
+    assert state["documents"]["en"]["name"] == "sample-policy.pdf"
     audit = client.post("/v1/verify", json={
         "query": "How long can I appeal a rejected claim?",
         "answer": "Rejected claims may be appealed within 90 days of the notice.",

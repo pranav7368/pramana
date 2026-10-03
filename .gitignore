@@ -54,18 +54,9 @@ desktop.ini
 
 !.env.pilot.example
 
-# ─── Local review and generated release material ─────────────────────
-# The software release contains source, tests, fictional examples and curated
-# docs only. Keep private paper drafts, exports, caches and raw run evidence local.
-docs/09_PRAMANA_ArXiv_Draft.tex
-docs/09_PRAMANA_ArXiv_Readiness.md
-output/
-deliverables/
+# ─── Local scratch and generated release material ─────────────────────
 tmp/
-.codex-finalizer/
-.pptbuild/
+output/
 .test-run-*/
 reports/*
 !reports/.gitkeep
-scripts/build_faculty_demo_pdf.py
-scripts/build_realistic_policy_pdf.py

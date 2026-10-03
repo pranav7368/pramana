@@ -57,6 +57,11 @@ def build_pipeline(offline: bool | None = None, *, settings: Settings | None = N
     if confidence.language and cfg.languages != (confidence.language,):
         raise ValueError("Language-specific confidence model requires matching PRAMANA_LANGUAGES")
     retriever = MultilingualRetriever()
+    reranker = None
+    if cfg.reranker_model:
+        from pramana.retrieval.rerank import CrossEncoderReranker
+        reranker = CrossEncoderReranker(cfg.reranker_model)
+        reranker._ensure_loaded()  # Fail startup, not the first request, if unavailable.
     encoder = None
     if cfg.api_embedding_model:
         from pramana.retrieval.api_embeddings import GoogleEmbeddingEncoder
@@ -66,7 +71,7 @@ def build_pipeline(offline: bool | None = None, *, settings: Settings | None = N
         if cfg.dense_model or cfg.api_embedding_model:
             from pramana.retrieval.dense import SentenceTransformerIndex
             dense = SentenceTransformerIndex(cfg.dense_model or cfg.api_embedding_model, encoder=encoder)
-        r = HybridRetriever(language=lang, top_k=4, dense=dense)
+        r = HybridRetriever(language=lang, top_k=4, dense=dense, reranker=reranker)
         r.add(chunks)
         if dense is not None:
             encoder = dense.encoder  # Share one model across language indices.
@@ -74,9 +79,12 @@ def build_pipeline(offline: bool | None = None, *, settings: Settings | None = N
 
     router = LLMRouter(
         registry=registry, providers=selected,
-        cache=GenerationCache(enabled=cfg.cache_enabled),
+        cache=GenerationCache(enabled=bool(cfg.cache_enabled)),
         rate_limit_wait_s=1.0 if cfg.pilot else 300.0,
     )
+    if not offline and cfg.transliterate_queries:
+        from pramana.retrieval.query_rewrite import LLMQueryTransliterator
+        retriever.query_variants = LLMQueryTransliterator(router)
     try:
         backend = KeywordNLIBackend() if offline else (
             TransformerNLIBackend() if cfg.verifier == "transformer" else LLMNLIBackend(router, strict=True)

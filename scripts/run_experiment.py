@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Evaluation harness — runs every system on every language and writes the tables.
 
-The human-review requirements are in `docs/13_VALIDATION_AND_HUMAN_REVIEW.md`.
+Implements `docs/06_EVALUATION_PROTOCOL.md` §7.
 
     python scripts/run_experiment.py --smoke              # offline, fixtures only
     python scripts/run_experiment.py --eval data/eval/questions.jsonl
@@ -41,6 +41,7 @@ from pramana.detection.verifier import (  # noqa: E402
     GroundingVerifier,
     KeywordNLIBackend,
     LLMNLIBackend,
+    TransformerNLIBackend,
 )
 from pramana.evaluation.metrics import (  # noqa: E402
     LanguageBreakdown,
@@ -58,7 +59,7 @@ from pramana.utils.console import bold, rule, safe_text, setup_console  # noqa: 
 
 setup_console()
 
-# System names identify the baselines. Baselines 4 and 5 exist
+# System names map to `docs/06_EVALUATION_PROTOCOL.md` §3. Baselines 4 and 5 exist
 # to justify specific design decisions, not to pad the table: if PRAMANA does not
 # beat them, the corresponding component is not earning its cost.
 SYSTEMS = {
@@ -67,12 +68,13 @@ SYSTEMS = {
     "sentence_nli": "Sentence-level NLI, no decomposition — isolates decomposition",
     "keyword": "Lexical floor — any learned verifier must beat this",
     "pramana": "Full pipeline",
+    "pramana_mdeberta": "Full pipeline with the local mDeBERTa XNLI verifier -- real NLI probabilities",
 }
 
 
 @dataclass(slots=True)
 class Item:
-    """One evaluation question with stable provenance."""
+    """One evaluation question. Mirrors `docs/05_DATASET_SPEC.md` §3.4."""
 
     qid: str
     parallel_id: str
@@ -192,6 +194,15 @@ def build_system(name: str, retriever: MultilingualRetriever, router, offline: b
             policy=CorrectionPolicy(max_iterations=2),
             executor=CorrectionExecutor(provider=router),
         )
+    if name == "pramana_mdeberta":
+        # Same pipeline, different judge: isolates the verifier. Offline runs keep
+        # the keyword floor so the smoke path never downloads a model.
+        backend = KeywordNLIBackend() if offline else TransformerNLIBackend()
+        return PramanaPipeline(
+            **common, decomposer=decomposer, verifier=GroundingVerifier(backend=backend),
+            policy=CorrectionPolicy(max_iterations=2),
+            executor=CorrectionExecutor(provider=router),
+        )
     raise ValueError(f"unknown system {name!r}. Known: {sorted(SYSTEMS)}")
 
 
@@ -259,7 +270,7 @@ def analyse(records: list[Record]) -> dict[str, Any]:
     """Per-language tables plus paired comparisons against the vanilla baseline.
 
     Note what is *not* reported: detection precision/recall/F1 against human
-    labels. Those need a human-annotated dataset (see docs/13_VALIDATION_AND_HUMAN_REVIEW.md) and are
+    labels. Those need the annotated dataset (`05_DATASET_SPEC.md` §4) and are
     computed by the analysis notebook once annotation exists. Reporting an
     unlabelled proxy as though it were F1 would be worse than reporting nothing.
     """
@@ -438,7 +449,7 @@ def smoke_items() -> list[Item]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--eval", type=Path, help="path to questions.jsonl")
+    ap.add_argument("--eval", type=Path, help="questions.jsonl (see 05_DATASET_SPEC.md §3.4)")
     ap.add_argument("--corpus", type=Path, help="corpus directory with {en,hi,ta}/ subfolders")
     ap.add_argument("--smoke", action="store_true", help="tiny offline wiring check")
     ap.add_argument("--systems", nargs="+", default=["vanilla", "pramana"], choices=sorted(SYSTEMS))
@@ -446,6 +457,8 @@ def main() -> int:
     ap.add_argument("--limit", type=int, help="cap items per language, for a quick pass")
     ap.add_argument("--offline", action="store_true", help="force the stub provider")
     ap.add_argument("--out", type=Path, default=ROOT / "reports")
+    ap.add_argument("--no-transliteration", action="store_true",
+                    help="search Romanised queries as typed (ablation)")
     args = ap.parse_args()
 
     if not args.eval and not args.smoke:
@@ -485,6 +498,10 @@ def main() -> int:
     offline = args.smoke or args.offline or not [s.name for s in load_registry().usable() if s.name != "stub"]
     router = LLMRouter(providers=["stub"]) if offline else LLMRouter()
     retriever = build_retriever(args.corpus)
+    if not offline and not args.no_transliteration:
+        # Shared by every system, so it never explains a difference between them.
+        from pramana.retrieval.query_rewrite import LLMQueryTransliterator
+        retriever.query_variants = LLMQueryTransliterator(router)
 
     print(f"\n{bold('PRAMANA evaluation harness')}")
     print(f"  items={len(items)}  languages={sorted({i.language for i in items})}")

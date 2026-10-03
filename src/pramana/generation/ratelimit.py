@@ -191,7 +191,8 @@ class RateLimiter:
             return
         with self._lock:
             self._roll_day_if_needed()
-            reserved_day, estimate = self._reservations.pop(reservation, (self._day, 0))
+            reserved_day, estimate = (self._reservations.pop(reservation, (self._day, 0))
+                                      if reservation is not None else (self._day, 0))
             if reserved_day == self._day:
                 self._tok_today += tokens - estimate
             # Reconcile this exact request, including concurrent completions.

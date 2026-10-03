@@ -1,7 +1,7 @@
 """Tests for the FastAPI service.
 
 Run against the offline stub, so no key and no network are required. The demo is
-deliverable D6 and will be shown at the defence — it must not be the least-tested
+the part most people see first — it must not be the least-tested
 part of the system.
 """
 
@@ -153,7 +153,7 @@ class TestCorpusAndDemo:
         assert all(c["chunk_id"] and c["text"] for chunks in d.values() for c in chunks)
 
     def test_demo_page_is_self_contained(self, client):
-        """No CDN, no build step -- a defence presentation is a bad place to
+        """No CDN, no build step -- a live presentation is a bad place to
         discover a missing asset."""
         html = client.get("/").text
         assert client.get("/").status_code == 200

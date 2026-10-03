@@ -261,7 +261,8 @@ class Registry:
             pinned_provider=r.get("pinned_provider"),
             cache_enabled=bool(r.get("cache_enabled", True)),
             respect_declared_limits=bool(r.get("respect_declared_limits", True)),
-            failover_on=tuple(r.get("failover_on") or RouterPolicy.failover_on),
+            # A slots dataclass exposes a member descriptor, not the default, on the class.
+            failover_on=tuple(r.get("failover_on") or RouterPolicy().failover_on),
             max_failovers=int(r.get("max_failovers", 3)),
         )
         return cls(specs=specs, policy=policy, source=p)
@@ -307,7 +308,7 @@ def _filter_kwargs(factory: Callable[..., Any], kwargs: dict[str, Any]) -> dict[
 
     target = factory
     if hasattr(factory, "__wrapped__"):
-        target = factory.__wrapped__  # type: ignore[attr-defined]
+        target = factory.__wrapped__
     try:
         sig = inspect.signature(target)
     except (TypeError, ValueError):

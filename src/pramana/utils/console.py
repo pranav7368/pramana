@@ -35,7 +35,7 @@ def setup_console() -> bool:
             continue
         try:
             # Python 3.7+: retarget the text wrapper without replacing the stream.
-            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+            stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError, OSError):
             try:
                 buffer = getattr(stream, "buffer", None)
@@ -54,7 +54,7 @@ def setup_console() -> bool:
         try:
             import ctypes
 
-            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            kernel32 = ctypes.windll.kernel32
             for handle_id in (-11, -12):  # STDOUT, STDERR
                 handle = kernel32.GetStdHandle(handle_id)
                 mode = ctypes.c_ulong()

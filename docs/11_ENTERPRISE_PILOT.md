@@ -220,7 +220,7 @@ or a gate fails. It checks attributed review fields, not the reviewer's identity
 ## Validation recorded for this change
 
 The current API-only checks and release blockers are recorded in
-[12_RELEASE_READINESS.md](12_RELEASE_READINESS.md). The following Docker paragraph
+[VALIDATION.md](VALIDATION.md). The following Docker paragraph
 describes an earlier run, not a rebuild of the current source. Docker Engine was
 not reachable during the 2026-09-30 hardening run; Compose syntax validation alone
 does not verify the container.

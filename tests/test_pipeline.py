@@ -197,8 +197,8 @@ class TestGuardRails:
 class TestAbstention:
     def test_abstention_short_circuits_before_verification(self):
         """Decomposing an abstention yields a claim scored UNVERIFIABLE, counting
-        the system as hallucinating for correctly declining. It must never
-        reach the verifier."""
+        the system as hallucinating for correctly declining -- docs/08_RESULTS.md
+        §P5(a). It must never reach the verifier."""
         r = build(_FixedProvider("INSUFFICIENT_EVIDENCE")).run("What is the WiFi password?")
 
         assert r.abstained

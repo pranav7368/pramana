@@ -12,7 +12,7 @@ whole design turns on one distinction:
 
 **The agreement number is itself a finding.** "LLM-as-judge agrees with human
 annotators at κ = 0.82 in English but κ = 0.51 in Tamil" directly supports the
-project's argument and gives the judge baseline a
+project's argument and gives baseline #3 (`06_EVALUATION_PROTOCOL.md` §3) a
 reliability figure rather than only an F1.
 
 Two properties are enforced in code rather than left to discipline:
@@ -123,7 +123,7 @@ class AgreementReport:
     @property
     def acceptable(self) -> bool:
         """Below 0.60 the guidelines are revised and the batch redone
-        (see docs/13_VALIDATION_AND_HUMAN_REVIEW.md)."""
+        (`05_DATASET_SPEC.md` §4.4)."""
         return self.kappa >= 0.60
 
     def __str__(self) -> str:
@@ -213,7 +213,7 @@ def stratified_sample(
     has them.
     """
     rng = random.Random(seed)
-    strata: dict[tuple[str, str], list[AnnotationItem]] = {}
+    strata: dict[tuple[Language, str], list[AnnotationItem]] = {}
     for item in items:
         key = (item.language, proposed.get(item.item_id, "UNKNOWN"))
         strata.setdefault(key, []).append(item)
@@ -444,7 +444,7 @@ class AnnotationStore:
         the human decides.
         """
         for source in ("adjudicated", "human"):
-            if (label := self.label(item_id, source)) is not None:  # type: ignore[arg-type]
+            if (label := self.label(item_id, source)) is not None:
                 return label
         return self.label(item_id, "llm")
 

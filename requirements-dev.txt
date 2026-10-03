@@ -1,0 +1,8 @@
+# Static analysis only. Kept out of requirements-pilot.txt so the runtime image
+# does not carry the type checker.
+-r requirements-pilot.txt
+librt==0.16.0
+mypy==2.4.0
+mypy_extensions==1.1.0
+pathspec==1.1.1
+types-PyYAML==6.0.12.20260906

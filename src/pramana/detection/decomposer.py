@@ -120,7 +120,7 @@ class RuleBasedDecomposer:
 
     A genuine fallback, not a toy: it keeps the pipeline testable offline and
     serves as the **ablation baseline** that isolates how much LLM decomposition
-    actually contributes.
+    actually contributes (`03_PROPOSAL.md` §4.8).
 
     Its known weakness is exactly the interesting one: it cannot restore an elided
     subject, so Hindi and Tamil claims may remain incomplete. That gap is the

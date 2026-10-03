@@ -294,7 +294,7 @@ def cmd_export(args) -> int:
         print(
             "\n  `label_source` is exported per item. Report results separately for\n"
             "  human-verified and judge-only labels — required wherever no human\n"
-            "  reader was available (see docs/13_VALIDATION_AND_HUMAN_REVIEW.md)."
+            "  reader was available (docs/03_PROPOSAL.md §7.1, risk R2)."
         )
     print()
     return 0

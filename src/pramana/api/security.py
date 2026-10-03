@@ -2,12 +2,18 @@
 from __future__ import annotations
 
 import secrets
+import time
 import uuid
 from urllib.parse import urlsplit
 
 from starlette.responses import JSONResponse
 
 from pramana.api.demo_documents import MAX_UPLOAD_BYTES
+from pramana.api.observability import request_id_var
+
+# Data responses never need to load anything. Pages that do (the demo UI) set
+# their own policy, which this default then leaves alone.
+API_CSP = b"default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
 
 
 def trusted_authority(authority: bytes, allowed: tuple[str, ...]) -> bool:
@@ -36,16 +42,38 @@ class ServiceBoundary:
             return await self.app(scope, receive, send)
         cfg = self.state.get("settings")
         trace_id = uuid.uuid4().hex[:12]
+        token = request_id_var.set(trace_id)
+        started = time.perf_counter()
+        status = 500
 
         async def traced_send(message):
+            nonlocal status
             if message["type"] == "http.response.start":
-                message["headers"] = [*message.get("headers", []),
-                                      (b"x-request-id", trace_id.encode()),
-                                      (b"cache-control", b"no-store"),
-                                      (b"x-content-type-options", b"nosniff"),
-                                      (b"x-frame-options", b"DENY"),
-                                      (b"referrer-policy", b"no-referrer")]
+                status = message["status"]
+                existing = message.get("headers", [])
+                extra = [(b"x-request-id", trace_id.encode()),
+                         (b"cache-control", b"no-store"),
+                         (b"x-content-type-options", b"nosniff"),
+                         (b"x-frame-options", b"DENY"),
+                         (b"referrer-policy", b"no-referrer")]
+                names = {k.lower(): v for k, v in existing}
+                # HTML pages own their policy (the demo sets one; FastAPI's /docs
+                # loads its assets from a CDN). Everything else is data.
+                if (b"content-security-policy" not in names
+                        and not names.get(b"content-type", b"").startswith(b"text/html")):
+                    extra.append((b"content-security-policy", API_CSP))
+                message["headers"] = [*existing, *extra]
             await send(message)
+
+        try:
+            return await self._handle(scope, receive, traced_send, cfg, trace_id)
+        finally:
+            request_id_var.reset(token)
+            metrics = self.state.get("metrics")
+            if metrics is not None:
+                metrics.record(scope["method"], scope["path"], status, time.perf_counter() - started)
+
+    async def _handle(self, scope, receive, traced_send, cfg, trace_id):
 
         async def reject(status, detail):
             await JSONResponse({"detail": detail, "request_id": trace_id}, status_code=status)(scope, receive, traced_send)
@@ -54,12 +82,15 @@ class ServiceBoundary:
             return await reject(503, "Service is starting")
         headers = dict(scope.get("headers", []))
         hosts = [value for key, value in scope.get("headers", []) if key == b"host"]
-        if len(hosts) != 1 or not trusted_authority(hosts[0], cfg.trusted_hosts):
+        # Platform health probes may use an internal address; health reveals no data.
+        probe = cfg.public and scope["path"] == "/v1/health" and scope["method"] in {"GET", "HEAD"}
+        if not probe and (len(hosts) != 1 or not trusted_authority(hosts[0], cfg.trusted_hosts)):
             return await reject(400, "Untrusted or malformed request host")
-        if cfg.mode == "demo" and scope["method"] not in {"GET", "HEAD", "OPTIONS"}:
+        if cfg.mode in {"demo", "public"} and scope["method"] not in {"GET", "HEAD", "OPTIONS"}:
             origin = headers.get(b"origin")
             host = headers.get(b"host", b"")
-            if origin and origin != b"http://" + host:
+            # A hosted demo sits behind a TLS proxy, so its own pages send https origins.
+            if origin and origin not in {b"http://" + host, b"https://" + host}:
                 return await reject(403, "Cross-origin demo requests are not allowed")
         if cfg.api_key and scope["path"] != "/v1/health":
             expected = f"Bearer {cfg.api_key}".encode()

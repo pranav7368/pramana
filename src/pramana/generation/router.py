@@ -358,7 +358,7 @@ class LLMRouter:
     def close(self) -> None:
         for b in self._bound:
             if hasattr(b.provider, "close"):
-                b.provider.close()  # type: ignore[attr-defined]
+                b.provider.close()
 
     def __enter__(self) -> LLMRouter:
         return self

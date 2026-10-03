@@ -3,7 +3,7 @@
 **Design goal:** the pipeline must never name a provider. Swapping Qwen for Llama-3, a hosted API for
 a local server, or a real model for an offline stub is a **configuration change**, not a code change.
 
-The architecture keeps the assurance layer
+This is architectural principle **P1** (`04_SYSTEM_ARCHITECTURE.md` §1) — the assurance layer is
 black-box over the generator. It is also what makes the generator ablation (**O7**) tractable and what
 lets the project run on a laptop with no GPU.
 
@@ -204,8 +204,8 @@ A hosted model can be updated or retired without notice, so **the endpoint is no
 > `data/processed/drafts_*.jsonl` alongside the report. Every reported number can then be regenerated
 > exactly, even if the provider has changed the model or shut the endpoint down.
 
-Every run manifest records the provider, the exact resolved model string, and the generation date.
-Without this, split execution silently destroys reproducibility —
+Every run manifest records the provider, the exact resolved model string, and the generation date
+(`07_IMPLEMENTATION_GUIDE.md` §10). Without this, split execution silently destroys reproducibility —
 the same config could replay against different drafts.
 
 ---
@@ -224,7 +224,7 @@ the pipeline did not have to learn anything about the new backend.
 
 ---
 
-## 7. Design Rationale (for the viva)
+## 7. Design Rationale
 
 **Why `httpx` directly instead of vendor SDKs?**
 One HTTP dependency covers a dozen providers. Eight SDKs would mean eight sets of pinned transitive
@@ -242,4 +242,4 @@ just under the line is cheaper and safer.
 **Why does a missing logprob become a missing feature rather than a default value?**
 Imputing a value would corrupt calibration silently — the confidence model would learn from a constant
 that carries no information while appearing to. Refitting without S3 is the honest handling, and the
-constraint must be reported with each evaluation.
+constraint is reported (`07_IMPLEMENTATION_GUIDE.md` §4.5).

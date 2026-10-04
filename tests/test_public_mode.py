@@ -152,6 +152,15 @@ class TestPublicService:
             restored = client.get("/v1/demo/documents", headers=SESSION_A).json()["documents"]["en"]
             assert restored.get("sample") is True
 
+    def test_public_upload_accepts_documents_larger_than_a_json_body(self, make_client):
+        # A real PDF is far larger than the 32 KB JSON limit; public uploads use the upload cap.
+        body = DOC + "Receipts are required for every expense above 500 rupees.\n" * 1500
+        assert len(body.encode()) > public_settings().max_body_bytes
+        with make_client() as client:
+            assert upload(client, SESSION_A, body=body).status_code == 200
+            assert client.post("/v1/demo/documents?filename=big.txt&language=en", content=b"a" * 5_000_001,
+                               headers={**SESSION_A, "Content-Type": "text/plain"}).status_code == 413
+
     def test_public_upload_requires_a_session(self, make_client):
         with make_client() as client:
             assert upload(client, {}).status_code == 400

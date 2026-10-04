@@ -101,7 +101,7 @@ class ServiceBoundary:
         except ValueError:
             return await reject(400, "Invalid Content-Length")
         body_limit = (
-            MAX_UPLOAD_BYTES if cfg.mode == "demo" and scope["path"] == "/v1/demo/documents"
+            MAX_UPLOAD_BYTES if cfg.mode in {"demo", "public"} and scope["path"] == "/v1/demo/documents"
             else cfg.max_body_bytes
         )
         if content_length < 0 or content_length > body_limit:

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixes
+
+- Public mode accepted uploads only up to the 32 KB JSON body limit, so most
+  real PDFs were refused with 413 on the hosted demo. Uploads now use the 5 MB
+  upload cap in both demo and public mode, with a regression test.
+
 ### Partial answers and interface themes
 
 - A fully supported answer that covers only part of the question is released

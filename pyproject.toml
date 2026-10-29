@@ -25,7 +25,7 @@ dependencies = [
 # Retrieval + NLI. Install torch from the CPU index first:
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
 nlp = [
-    "sentence-transformers>=3.0",
+    "sentence-transformers>=6.1.0",
     "transformers>=4.44",
     "faiss-cpu>=1.8",
     "rank-bm25>=0.2.2",

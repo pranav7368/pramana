@@ -37,7 +37,7 @@ eval = [
     "scikit-learn>=1.5",
     "scipy>=1.13",
     "pandas>=2.2",
-    "matplotlib>=3.9",
+    "matplotlib>=3.11.2",
     "datasets>=2.20",
 ]
 serve = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "pydantic>=2.7", "pypdf>=6,<7"]

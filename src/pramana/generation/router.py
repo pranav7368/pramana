@@ -246,7 +246,7 @@ class LLMRouter:
             except QuotaExhaustedError as exc:
                 if reservation:
                     limiter.retain_reservation(reservation)
-                limiter.mark_exhausted()  # trust the server over our counter
+                limiter.mark_exhausted(until=exc.resets_at)  # trust the server over our counter
                 self._note_failover(spec.name, exc, errors)
                 continue
             except self.failover_types as exc:

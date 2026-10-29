@@ -394,19 +394,27 @@ class CorrectionExecutor:
 
 
 def prune_claims(text: str, detection: DetectionResult) -> str:
-    """Remove the spans of unsupported claims, keeping the rest intact.
+    """Remove unsupported claims, keeping the rest.
 
-    Only span-linked claims can be excised. A claim rewritten during decomposition
-    (to restore an elided Hindi subject, for instance) has no span, and guessing
-    one would delete the wrong text -- so those are left in place and the verdict
-    is carried forward instead.
+    Span-linked claims are excised from the text. A claim rewritten during
+    decomposition (to restore an elided Hindi subject, for instance) has no span,
+    and guessing one would delete the wrong text; when a flagged claim has no span,
+    the answer is rebuilt from the supported claims instead. With no supported
+    claim at all the text is returned unchanged and the policy decides.
     """
+    flagged = [v for v in detection.claim_verdicts if v.is_hallucination]
+    supported = [v.claim.text.strip() for v in detection.claim_verdicts if not v.is_hallucination]
+    if any(v.claim.source_span is None for v in flagged) and supported:
+        # A flagged claim without a span cannot be cut out. The LLM decomposer
+        # rewrites almost every claim ("magazines are not ..." -> "Magazines are
+        # not ..."), so in live use this was the normal case and PRUNE silently
+        # returned the answer unchanged, which the rollback guard then discarded
+        # (found 15 October 2026). Rebuild the answer from the claims that were
+        # verified instead; each is a self-contained sentence and is checked again.
+        return _tidy(" ".join(_as_sentence(c) for c in supported))
+
     spans = sorted(
-        (
-            v.claim.source_span
-            for v in detection.claim_verdicts
-            if v.is_hallucination and v.claim.source_span is not None
-        ),
+        (v.claim.source_span for v in flagged if v.claim.source_span is not None),
         key=lambda s: -s[0],
     )
     if not spans:
@@ -420,11 +428,36 @@ def prune_claims(text: str, detection: DetectionResult) -> str:
     return _tidy(out)
 
 
+# Connectives left dangling when the clause after them is pruned:
+# "5 books at a time, and magazines are not included." -> "5 books at a time, and."
+# Measured 15 October 2026: the broken sentence then failed the coverage check, so a
+# supportable partial answer was withheld; in Hindi it was released ending in "और".
+# Only words that cannot end a well-formed sentence: "पर" ("on", as in "आधार पर")
+# and "also" can, so they are not listed.
+_DANGLING = (
+    r"(?:and|but|or"
+    r"|और|तथा|एवं|लेकिन|मगर|किंतु|परंतु"
+    r"|மற்றும்|ஆனால்)"
+)
+
+
+def _as_sentence(text: str) -> str:
+    """End a claim with sentence punctuation so joined claims read as sentences."""
+    text = text.strip()
+    if not text or text[-1] in ".!?।":
+        return text
+    return text + ("।" if any("ऀ" <= ch <= "ॿ" for ch in text) else ".")
+
+
 def _tidy(text: str) -> str:
     import re
 
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\s+([.,;:!?।])", r"\1", text)
+    # A connective (with its comma) that now ends a sentence or the text.
+    text = re.sub(rf"[,;]?\s+{_DANGLING}\s*([.!?।]|$)", r"\1", text, flags=re.I)
+    # A comma or semicolon directly before the end of a sentence.
+    text = re.sub(r"[,;:]+\s*([.!?।]|$)", r"\1", text)
     text = re.sub(r"([.।])\s*\1+", r"\1", text)
     return text.strip()
 

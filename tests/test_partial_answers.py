@@ -96,10 +96,24 @@ class TestPipeline:
         assert result.abstained and not result.partial
         assert result.final_answer == DraftGenerator.abstention_message("en")
 
-    def test_coverage_is_not_asked_when_the_whole_answer_is_entailed(self):
-        judge = _Judge("PARTIAL", whole_answer=NLIScores(0.9, 0.05, 0.05))
+    def test_entailed_complete_answer_gets_no_notice(self):
+        judge = _Judge("FULL", whole_answer=NLIScores(0.9, 0.05, 0.05))
         result = _pipeline(judge).run("How many leave days can I carry forward?", language="en")
-        assert not result.abstained and not result.partial and judge.coverage_calls == 0
+        assert not result.abstained and not result.partial and judge.coverage_calls == 1
+        assert not result.final_answer.endswith(PARTIAL_NOTES["en"])
+
+    def test_entailed_answer_to_part_of_the_question_gets_the_notice(self):
+        """Found 19 October 2026: an entailed answer skipped the coverage judgement and
+        was released without saying that encashment is not covered."""
+        judge = _Judge("PARTIAL", whole_answer=NLIScores(0.9, 0.05, 0.05))
+        result = _pipeline(judge).run(QUESTION, language="en")
+        assert not result.abstained and result.partial
+        assert result.final_answer.endswith(PARTIAL_NOTES["en"])
+
+    def test_other_coverage_labels_do_not_withhold_an_entailed_answer(self):
+        judge = _Judge("UNSUPPORTED", whole_answer=NLIScores(0.9, 0.05, 0.05))
+        result = _pipeline(judge).run(QUESTION, language="en")
+        assert not result.abstained and not result.partial
 
     def test_a_contradicted_whole_answer_never_becomes_partial(self):
         judge = _Judge("PARTIAL", whole_answer=NLIScores(0.05, 0.9, 0.05))

@@ -405,7 +405,9 @@ const REASON = {
   rolled_back:'A revision made the answer worse and was rolled back.',
   correction_failed:'A revision could not be produced, so the checked answer was kept.',
   correction_abstained:'Revision concluded the source cannot answer this.',
-  unresolved_evidence:'Some claims stayed unsupported, so the answer was withheld.'
+  unresolved_evidence:'Some claims stayed unsupported, so the answer was withheld.',
+  language_mismatch:'The answer mixed in words of another script, so it was withheld rather than shown.',
+  personal_case:'The question needs your own records, which the documents do not contain; a general rule is not shown as the answer.'
 };
 const STOP = new Set(['the','and','for','are','was','were','with','that','this','from','have','has','been','will','may','can','its','any','all','per','into','than','then','their','there','which','what','when','your','you','does','did','how','who']);
 const WORD = /[\p{L}\p{M}\p{N}]+/gu;

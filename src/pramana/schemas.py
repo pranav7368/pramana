@@ -283,6 +283,9 @@ class DetectionResult:
     partial: bool = False
     """Every claim is supported, but the evidence covers only part of the
     question. The answer may be released, labelled as partial."""
+    personal_case: bool = False
+    """The question needs the asker's own records, which the evidence does not
+    describe. A supported general rule must not be released as the answer."""
 
     @property
     def n_claims(self) -> int:

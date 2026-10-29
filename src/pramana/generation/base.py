@@ -170,6 +170,47 @@ class LocalCapacityError(RateLimitError):
     """Declared client-side capacity reached, not an upstream 429 response."""
 
 
+_PER_PERIOD_MARKERS = ("per minute", "perminute", "per second", "persecond", "tokens per min", "requests per min")
+_DAILY_MARKERS = ("per day", "perday", "daily", "credits", "insufficient_quota", "billing")
+
+
+def retry_after_seconds(body: str) -> float | None:
+    """Seconds until a provider says to retry, from a 429 body, or None.
+
+    Google writes "Please retry in 15h36m29.5s." in the message and
+    "retryDelay": "56s" in the details; both forms are read.
+    """
+    import re
+
+    m = re.search(r"retry in\s+((?:\d+h)?(?:\d+m)?(?:[\d.]+s)?)", body, re.I)
+    text = m.group(1) if m and m.group(1) else None
+    if text is None:
+        m = re.search(r'"retryDelay"\s*:\s*"([\d.]+)s"', body)
+        return float(m.group(1)) if m else None
+    total = 0.0
+    for value, unit in re.findall(r"([\d.]+)([hms])", text):
+        total += float(value) * {"h": 3600, "m": 60, "s": 1}[unit]
+    return total or None
+
+
+def is_daily_quota(body: str) -> bool:
+    """Whether an HTTP 429 body says the allowance is spent for the day.
+
+    Google reports every limit as RESOURCE_EXHAUSTED with the word "quota",
+    including the per-minute one ("GenerateRequestsPerMinutePerProjectPerModel").
+    Matching on "quota" alone turned each per-minute throttle into a daily
+    exhaustion and switched Google off (found 19 October 2026). The named
+    period decides; a bare "quota" or "exhausted" with no period stays daily,
+    because the router's block on it now expires on its own.
+    """
+    lowered = body.lower()
+    if any(k in lowered for k in _DAILY_MARKERS):
+        return True
+    if any(k in lowered for k in _PER_PERIOD_MARKERS):
+        return False
+    return "quota" in lowered or "exhausted" in lowered
+
+
 class QuotaExhaustedError(ProviderError):
     """Daily/monthly allowance spent. Not retryable *today* -- the router fails
     over to another provider rather than backing off."""

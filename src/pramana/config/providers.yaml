@@ -89,7 +89,9 @@ providers:
     # not -- worth knowing, since reproducible generation is the cheaper path to
     # regenerating a lost draft cache.
     capabilities: [system_role, seed]
-    limits: { rpm: 15, rpd: 1500 }
+    # MEASURED 2026-10-19 from the 429 body: GenerateRequestsPerDayPerProjectPerModel-FreeTier,
+    # limit 500 for gemini-3.5-flash-lite (the earlier 1500 was transcribed, not measured).
+    limits: { rpm: 15, rpd: 500 }
     models:
       flash-lite: gemini-flash-lite-latest      # verified working
       flash: gemini-flash-latest                # works; see thinking-budget note

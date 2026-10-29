@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from collections import deque
@@ -30,6 +31,8 @@ class LimitSnapshot:
     tokens_today: int
     rpd: int | None
     tpd: int | None
+    blocked: bool = False
+    """The provider itself reported its quota spent, and the retry window is open."""
 
     @property
     def requests_remaining(self) -> int | None:
@@ -37,6 +40,8 @@ class LimitSnapshot:
 
     @property
     def exhausted(self) -> bool:
+        if self.blocked:
+            return True
         if self.rpd is not None and self.requests_today >= self.rpd:
             return True
         return self.tpd is not None and self.tokens_today >= self.tpd
@@ -53,6 +58,10 @@ class RateLimiter:
         safety_margin: fraction of the declared limit left unused. Published
             figures are approximate and enforcement is often stricter than
             documented, so 5% headroom avoids tripping the real limit.
+        exhausted_retry_s: after the provider reports its own quota spent, how
+            long to skip it before one request tries again. Providers reset on
+            their own clock (Google's free tier at midnight Pacific time), not
+            on our UTC day, so a server signal must expire on its own.
     """
 
     def __init__(
@@ -65,6 +74,7 @@ class RateLimiter:
         tpd: int | None = None,
         state_dir: str | Path = "data/cache/ratelimit",
         safety_margin: float = 0.05,
+        exhausted_retry_s: float = 1800.0,
     ) -> None:
         self.provider = provider
         margin = 1.0 - safety_margin
@@ -82,6 +92,8 @@ class RateLimiter:
         self._day = _utc_day()
         self._req_today = 0
         self._tok_today = 0
+        self.exhausted_retry_s = exhausted_retry_s
+        self._exhausted_until = 0.0  # wall-clock seconds; survives restarts
         self._load()
 
     # ── persistence ───────────────────────────────────────────────────────────
@@ -91,6 +103,7 @@ class RateLimiter:
             if not self._state_path.exists():
                 return
             data = json.loads(self._state_path.read_text(encoding="utf-8"))
+            self._exhausted_until = float(data.get("exhausted_until", 0.0))
             if data.get("day") == self._day:
                 self._req_today = int(data.get("requests", 0))
                 self._tok_today = int(data.get("tokens", 0))
@@ -100,12 +113,15 @@ class RateLimiter:
     def _save(self) -> None:
         try:
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
-            self._state_path.write_text(
-                json.dumps(
-                    {"day": self._day, "requests": self._req_today, "tokens": self._tok_today}
-                ),
+            # Write-then-rename: a process killed mid-write left a file of NUL
+            # bytes (15 October 2026), which silently reset the counters.
+            tmp = self._state_path.with_name(self._state_path.name + ".tmp")
+            tmp.write_text(
+                json.dumps({"day": self._day, "requests": self._req_today, "tokens": self._tok_today,
+                            "exhausted_until": self._exhausted_until}),
                 encoding="utf-8",
             )
+            os.replace(tmp, self._state_path)
         except OSError as exc:
             log.debug("could not persist rate-limit state for %s: %s", self.provider, exc)
 
@@ -127,6 +143,8 @@ class RateLimiter:
         """
         with self._lock:
             self._roll_day_if_needed()
+            if self._blocked():
+                return False
             if self.rpd is not None and self._req_today >= self.rpd:
                 return False
             return not (self.tpd is not None and self._tok_today + tokens > self.tpd)
@@ -145,7 +163,7 @@ class RateLimiter:
         while True:
             with self._lock:
                 self._roll_day_if_needed()
-                if (self.rpd is not None and self._req_today >= self.rpd) or (
+                if self._blocked() or (self.rpd is not None and self._req_today >= self.rpd) or (
                     self.tpd is not None and self._tok_today + tokens > self.tpd
                 ):
                     return False
@@ -214,20 +232,30 @@ class RateLimiter:
         with self._lock:
             self._reservations.pop(reservation, None)
 
-    def mark_exhausted(self) -> None:
-        """Trust a provider's own 'daily quota spent' signal over our counters.
+    def mark_exhausted(self, until: float | None = None) -> None:
+        """Trust a provider's own 'quota spent' signal over our counters.
 
-        Our count can lag reality — requests made from another machine, or before
-        this state file existed.  When the server says done, we are done.
+        Our count can lag reality: requests made from another machine, or before
+        this state file existed. When the server says done, the provider is
+        skipped for ``exhausted_retry_s``; then one request tries again and, if the
+        quota is still spent, marks it again.
+
+        An earlier version set today's counter to the daily limit. Google's free
+        tier resets at midnight Pacific time, 07:00 UTC, so a signal received at
+        06:00 UTC blocked Google until the next UTC midnight although Google had
+        reset an hour later (found 16 October 2026).
         """
         with self._lock:
             self._roll_day_if_needed()
-            if self.rpd is not None:
-                self._req_today = max(self._req_today, self.rpd)
-            else:
-                self.rpd = self._req_today = max(self._req_today, 1)
+            # A provider that names its reset time is trusted; otherwise retry later.
+            self._exhausted_until = until if until and until > time.time() else time.time() + self.exhausted_retry_s
             self._save()
-            log.info("provider=%s marked exhausted for %s", self.provider, self._day)
+            log.info("provider=%s reported its quota spent; skipped for %.0fs",
+                     self.provider, self._exhausted_until - time.time())
+
+    def _blocked(self) -> bool:
+        """Caller holds the lock."""
+        return time.time() < self._exhausted_until
 
     def snapshot(self) -> LimitSnapshot:
         with self._lock:
@@ -238,6 +266,7 @@ class RateLimiter:
                 tokens_today=self._tok_today,
                 rpd=self.rpd,
                 tpd=self.tpd,
+                blocked=self._blocked(),
             )
 
 

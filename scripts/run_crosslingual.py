@@ -29,6 +29,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from collections import defaultdict
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
@@ -249,6 +250,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--offline", action="store_true", help="stub provider; checks wiring, measures nothing")
     ap.add_argument("--out", type=Path, help="output directory (default reports/crosslingual-<time>)")
     ap.add_argument("--score", type=Path, help="score a reviewed review.csv instead of running")
+    ap.add_argument("--retry-errors", type=float, default=0.0, metavar="SECONDS",
+                    help="retry a pair once after this many seconds if it ended in a provider error")
     args = ap.parse_args(argv)
 
     if args.score:
@@ -274,6 +277,12 @@ def main(argv: list[str] | None = None) -> int:
             for row in rows:
                 for document_language in args.doc_languages:
                     record = run_pair(pipeline, row, document_language, chunk_text, refs[row["qid"]])
+                    if record["error"] and args.retry_errors:
+                        # A free-tier provider fault is not a property of the system: wait
+                        # for the minute window to clear and try the same pair once more.
+                        time.sleep(args.retry_errors)
+                        record = run_pair(pipeline, row, document_language, chunk_text, refs[row["qid"]])
+                        record["retried"] = True
                     records.append(record)
                     raw.write(json.dumps(record, ensure_ascii=False) + "\n")
                     raw.flush()

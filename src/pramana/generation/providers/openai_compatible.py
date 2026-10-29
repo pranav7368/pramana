@@ -33,6 +33,7 @@ from pramana.generation.base import (
     TokenLogProb,
     TransientError,
     Usage,
+    is_daily_quota,
 )
 from pramana.generation.budget import provider_timeout
 
@@ -282,10 +283,9 @@ class OpenAICompatibleProvider:
             )
 
         if status == 429:
-            lowered = body.lower()
             # Distinguish "slow down" from "you are done for today": the first
             # deserves backoff, the second deserves failover to another provider.
-            if any(k in lowered for k in ("daily", "per day", "quota", "credits", "exhausted")):
+            if is_daily_quota(body):
                 return QuotaExhaustedError(
                     f"{self.name}: daily quota exhausted. {body}", provider=self.name
                 )

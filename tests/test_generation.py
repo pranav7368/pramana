@@ -6,6 +6,8 @@ the point -- the layer must be verifiable on the dev laptop.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from pramana.generation import (
@@ -320,6 +322,32 @@ class TestRateLimiter:
         rl.mark_exhausted()
         assert rl.has_daily_capacity() is False
 
+    def test_server_exhaustion_expires_on_its_own(self, tmp_path):
+        """Providers reset on their own clock. A 'quota spent' signal must not block
+        a provider until our next UTC midnight (Google resets at midnight Pacific)."""
+        rl = RateLimiter("t", rpd=1000, state_dir=tmp_path, safety_margin=0.0, exhausted_retry_s=0.2)
+        rl.mark_exhausted()
+        assert rl.has_daily_capacity() is False and rl.snapshot().exhausted
+        assert rl.acquire(timeout=0.1) is False
+        time.sleep(0.3)
+        assert rl.has_daily_capacity() is True and not rl.snapshot().exhausted
+        assert rl.snapshot().requests_today == 0  # the signal no longer inflates the count
+
+    def test_server_exhaustion_survives_restart(self, tmp_path):
+        RateLimiter("t", rpd=1000, state_dir=tmp_path, exhausted_retry_s=60).mark_exhausted()
+        assert RateLimiter("t", rpd=1000, state_dir=tmp_path).has_daily_capacity() is False
+
+    def test_state_is_written_atomically(self, tmp_path):
+        rl = RateLimiter("t", rpd=10, state_dir=tmp_path)
+        rl.acquire(timeout=0.5)
+        assert (tmp_path / "t.json").exists() and not (tmp_path / "t.json.tmp").exists()
+
+    def test_corrupt_state_file_is_ignored(self, tmp_path):
+        """A process killed mid-write once left a file of NUL bytes."""
+        (tmp_path / "t.json").write_bytes(b"\x00" * 64)
+        rl = RateLimiter("t", rpd=10, state_dir=tmp_path)
+        assert rl.snapshot().requests_today == 0 and rl.acquire(timeout=0.5)
+
     def test_no_limits_means_never_blocked(self, tmp_path):
         rl = RateLimiter("t", state_dir=tmp_path)
         assert all(rl.acquire(timeout=0.5) for _ in range(50))
@@ -426,3 +454,53 @@ class TestRouter:
 
         router = LLMRouter(providers=["stub"], cache=GenerationCache(tmp_path))
         assert isinstance(router, LLMProvider)
+
+
+class TestDailyQuotaClassification:
+    """Google words every 429 as RESOURCE_EXHAUSTED ... quota, per-minute ones too."""
+
+    def test_google_per_minute_limit_is_not_daily(self):
+        from pramana.generation.base import is_daily_quota
+        body = ('{"error": {"code": 429, "message": "You exceeded your current quota. Quota exceeded for metric: '
+                'generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 15, '
+                'quota_id: GenerateRequestsPerMinutePerProjectPerModel-FreeTier", "status": "RESOURCE_EXHAUSTED"}}')
+        assert is_daily_quota(body) is False
+
+    def test_google_per_day_limit_is_daily(self):
+        from pramana.generation.base import is_daily_quota
+        body = ('{"error": {"code": 429, "message": "Quota exceeded for metric ... '
+                'quota_id: GenerateRequestsPerDayPerProjectPerModel-FreeTier", "status": "RESOURCE_EXHAUSTED"}}')
+        assert is_daily_quota(body) is True
+
+    def test_groq_minute_and_day_messages(self):
+        from pramana.generation.base import is_daily_quota
+        assert is_daily_quota("Rate limit reached for model on tokens per minute (TPM): Limit 12000") is False
+        assert is_daily_quota("Rate limit reached for model on requests per day (RPD): Limit 1000") is True
+
+    def test_unnamed_quota_stays_daily(self):
+        from pramana.generation.base import is_daily_quota
+        assert is_daily_quota("quota exhausted") is True
+        assert is_daily_quota("slow down") is False
+
+
+class TestProviderResetTime:
+    """Google names when its daily quota resets; the limiter should wait exactly that long."""
+
+    def test_retry_delay_is_read_from_both_forms(self):
+        from pramana.generation.base import retry_after_seconds
+        assert retry_after_seconds("Please retry in 15h36m29.5s.") == 15 * 3600 + 36 * 60 + 29.5
+        assert retry_after_seconds('"retryDelay": "56s"') == 56.0
+        assert retry_after_seconds("slow down") is None
+
+    def test_limiter_uses_the_named_reset_time(self, tmp_path):
+        rl = RateLimiter("t", rpd=1000, state_dir=tmp_path, exhausted_retry_s=0.1)
+        rl.mark_exhausted(until=time.time() + 60)
+        time.sleep(0.2)
+        assert rl.has_daily_capacity() is False  # the provider's time, not the 0.1 s default
+
+    def test_past_reset_time_falls_back_to_the_default_window(self, tmp_path):
+        rl = RateLimiter("t", rpd=1000, state_dir=tmp_path, exhausted_retry_s=0.1)
+        rl.mark_exhausted(until=time.time() - 5)
+        assert rl.has_daily_capacity() is False
+        time.sleep(0.2)
+        assert rl.has_daily_capacity() is True

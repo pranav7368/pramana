@@ -4,6 +4,73 @@
 
 ### Fixes
 
+- Answers that mix in another language's script (Devanagari inside a Tamil
+  answer, for example) are regenerated once with the stray script named, then
+  rewritten into the answer's own script without the source context; an answer
+  that is still mixed is withheld with the stop reason `language_mismatch`.
+  The claim checker compares meaning and could not see this fault.
+- The personal-case check ("does this question need the asker's own
+  records?") runs for every released answer, not only partial ones
+  (`personal_case`). A prompt change had made "how much fine do I owe?" be
+  answered with the general rule.
+- An entailed answer is now also checked for coverage, so an answer to part of
+  a question always carries the partial notice.
+- Pruning rebuilds the answer from its supported claims when a flagged claim has
+  no text span. The live decomposer rewrites claims, so pruning used to return
+  the answer unchanged and the answer was withheld. A connective left at the end
+  of a sentence ("..., and") is removed.
+- The generation prompt names the answer language, asks for translation rather
+  than copying, keeps qualifiers such as "more than", and asks to answer only
+  the covered parts of a multi-part question.
+- Provider layer: a provider's "quota spent" signal now blocks it for 30
+  minutes instead of until the next UTC midnight (Google resets at midnight
+  Pacific time); the limiter's state file is written atomically; and a 429 is
+  read as a spent daily quota only when it names a daily period, because Google
+  words its per-minute throttle as "quota" too.
+- The correction latency budget now counts only time spent correcting. A
+  verification on free tiers takes 20-40 s, so a clock started before it had
+  always run out when a correction was needed, and correctable answers were
+  withheld.
+- A word that mixes Latin letters into Hindi or Tamil script ("पॉolicy") is
+  treated like a stray script: regenerate, rewrite, or withhold.
+- Google's free tier allows 500 requests a day for gemini-3.5-flash-lite
+  (measured from its 429 body); the configuration said 1500. The limiter now
+  waits until the reset time a provider names ("retry in 15h36m").
+- The claim decomposer no longer turns a description inside a noun phrase
+  ("rejected claims") into a separate claim ("the claim was rejected"). Such a
+  claim is unverifiable against a policy, survived every prune because it was
+  extracted again, and got correct answers withheld.
+- The verification judge is told that a rule restated in an equivalent form is
+  entailment, not contradiction ("must be submitted within 30 days" against
+  "rejected if submitted more than 30 days after"). Checked live: equivalent
+  rule entailed; wrong number, inverted wrong number and flipped negation still
+  contradicted; unrelated claim neutral.
+- The decomposer keeps a number or limit in the same claim as the thing it
+  applies to. "Covers dental treatment up to 25,000 a year" had been split into
+  "covers dental treatment" and "provides up to 25,000 a year"; the second was
+  unverifiable on its own, pruning removed it, and the answer lost its amount.
+- The personal-case judge has examples in English, Hindi and Tamil, and a
+  Hindi or Tamil question that it judges general is asked again in a literal
+  English translation that keeps every reference to the asker; either "yes"
+  counts. On 22 October the judge had answered "how much fine do I owe for my
+  overdue book?" with the general rule in Hindi and Tamil, not in English. A
+  live check of eleven questions (three personal, eight general) then gave the
+  expected label for all of them.
+- The personal-case judge now applies a concrete test: could the exact answer
+  be given to anyone who asks, without a detail of the asker's own case? A
+  definition with examples had not stopped Gemini from answering "how much fine
+  do I have to pay for the book I returned late?" with the general rule.
+- A personal question is answered only when the document is a record of the
+  asker's own case (a letter or statement about them). This used to be decided
+  by the coverage judgement, which calls a general rule a full answer.
+- The personal-case judge is told that a named plan, policy or product code is
+  not the asker's own record. Gemini had withheld "how much does policy PX-4471
+  cover for dental treatment?" in Hindi and Tamil as a personal question.
+- `scripts/run_crosslingual.py --retry-errors SECONDS` retries a pair once
+  after a provider error, so a free-tier fault is not recorded as behaviour.
+- The Hindi and Tamil sample policies said "30 days after discharge" where the
+  English one says "more than 30 days after"; they now match, and the example
+  gold chunk ids were updated.
 - Public mode accepted uploads only up to the 32 KB JSON body limit, so most
   real PDFs were refused with 413 on the hosted demo. Uploads now use the 5 MB
   upload cap in both demo and public mode, with a regression test.

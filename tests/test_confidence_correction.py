@@ -507,3 +507,33 @@ class TestRegressionTracker:
 
     def test_empty_tracker_summary(self):
         assert RegressionTracker().summary() == "no corrections attempted"
+
+
+class TestPruningWithoutSpans:
+    """Live decomposers rewrite claims, so most claims have no span (15 October 2026)."""
+
+    def test_rebuilds_from_supported_claims_when_a_flagged_claim_has_no_span(self):
+        text = "You may borrow up to 5 books at a time, and magazines are not included in that limit."
+        det = DetectionResult([
+            ClaimVerdict(claim=Claim("c0", "You may borrow up to 5 books at a time.", "en", None),
+                         verdict=Verdict.SUPPORTED),
+            ClaimVerdict(claim=Claim("c1", "Magazines are not included in that limit.", "en", None),
+                         verdict=Verdict.UNVERIFIABLE),
+        ])
+        assert prune_claims(text, det) == "You may borrow up to 5 books at a time."
+
+    def test_rebuilt_claims_get_sentence_punctuation(self):
+        det = DetectionResult([
+            ClaimVerdict(claim=Claim("c0", "एक सदस्य अधिकतम 5 पुस्तकें ले सकता है", "hi", None),
+                         verdict=Verdict.SUPPORTED),
+            ClaimVerdict(claim=Claim("c1", "The fee is 600 rupees", "en", None), verdict=Verdict.SUPPORTED),
+            ClaimVerdict(claim=Claim("c2", "पत्रिकाएँ शामिल नहीं हैं", "hi", None), verdict=Verdict.UNVERIFIABLE),
+        ])
+        assert prune_claims("ignored", det) == "एक सदस्य अधिकतम 5 पुस्तकें ले सकता है। The fee is 600 rupees."
+
+    def test_contradicted_claims_are_dropped_too(self):
+        det = DetectionResult([
+            ClaimVerdict(claim=Claim("c0", "The fee is 600 rupees.", "en", None), verdict=Verdict.SUPPORTED),
+            ClaimVerdict(claim=Claim("c1", "The fine is 5 rupees.", "en", None), verdict=Verdict.CONTRADICTED),
+        ])
+        assert prune_claims("The fee is 600 rupees and the fine is 5 rupees.", det) == "The fee is 600 rupees."

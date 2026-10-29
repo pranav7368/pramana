@@ -34,6 +34,7 @@ from pramana.schemas import (
     RetrievalResult,
     Verdict,
 )
+from pramana.utils.script import foreign_scripts
 
 
 @dataclass(slots=True)
@@ -77,7 +78,12 @@ class PramanaPipeline:
         rolled_back = abstained = False
         stop_reason = ""
         pending_detection: DetectionResult | None = None
-        loop_started = time.perf_counter()
+        # The budget bounds the time spent *correcting*, not the first verification.
+        # On free tiers one verification takes 20-40 s (several judgements under a
+        # 15-requests-per-minute limit), so a clock started before it had always run
+        # out by the time a correction was needed, and correctable answers were
+        # withheld (4 of 93 on 20 October 2026). Started at the first correction.
+        correction_started: float | None = None
 
         while True:
             if DraftGenerator.is_abstention(draft.text):
@@ -104,7 +110,7 @@ class PramanaPipeline:
                 if attempts >= policy.max_iterations:
                     action = Action.ABSTAIN
                     stop_reason = "correction_limit"
-                elif _ms(loop_started) >= policy.latency_budget_ms:
+                elif correction_started is not None and _ms(correction_started) >= policy.latency_budget_ms:
                     action = Action.ABSTAIN
                     stop_reason = "latency_budget"
 
@@ -117,6 +123,8 @@ class PramanaPipeline:
                 break
 
             attempts += 1
+            if correction_started is None:
+                correction_started = time.perf_counter()
             candidate_retrieval = retrieval
             candidate_detection = detection
             t0 = time.perf_counter()
@@ -166,6 +174,16 @@ class PramanaPipeline:
             actions.append(Action.ABSTAIN)
             abstained = True
             stop_reason = "unresolved_evidence"
+        if self.fail_closed and executor is not None and not abstained and detection.personal_case:
+            actions.append(Action.ABSTAIN)
+            abstained = True
+            stop_reason = "personal_case"
+        if executor is not None and not abstained and foreign_scripts(draft.text, lang):
+            # Meaning was verified, but the answer mixes in another language's script.
+            # The claim checker cannot see that, so the answer is withheld rather than released.
+            actions.append(Action.ABSTAIN)
+            abstained = True
+            stop_reason = "language_mismatch"
         partial = not abstained and executor is not None and detection.partial
         if partial:
             draft = Draft(text=f"{draft.text.rstrip()}\n\n{DraftGenerator.partial_note(lang)}", language=lang)
@@ -220,6 +238,18 @@ class PramanaPipeline:
                       )).normalised()
             verdict = apply_thresholds(scores, self.verifier._thresholds_for(lang))
             assess = getattr(self.verifier.backend, "assess_coverage", None)
+            own_records = getattr(self.verifier.backend, "needs_own_records", None)
+            if (verdict is Verdict.SUPPORTED and own_records is not None and query
+                    and own_records(retrieval.context_text(), query, draft.text, lang)):
+                # The answer is true of the documents but answers a question about the
+                # asker's own case with a general rule. Withheld by the pipeline.
+                detection.personal_case = True
+            elif (verdict is Verdict.SUPPORTED and assess is not None and query
+                    and assess(retrieval.context_text(), query, draft.text, lang) == "PARTIAL"):
+                # An entailed answer can still cover only part of the question. The
+                # coverage judgement used to run only for unentailed answers, so such
+                # answers were released without the notice (5 of 9 on 19 October 2026).
+                detection.partial = True
             if (verdict is Verdict.UNVERIFIABLE and assess is not None and query
                     and assess(retrieval.context_text(), query, draft.text, lang) == "PARTIAL"):
                 # Everything stated is supported; only part of the question is

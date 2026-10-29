@@ -56,7 +56,11 @@ _DECOMPOSE_SYSTEM = {
         "4. Do not add information that is not in the answer. Do not define or "
         "explain words, and do not write commentary about the answer itself.\n"
         "5. Output one claim per line, no numbering, no commentary.\n"
-        "6. If the answer contains no factual claim, output NO_CLAIMS."
+        "6. If the answer contains no factual claim, output NO_CLAIMS.\n"
+        "7. A description inside a noun phrase ('rejected claims', 'unused leave days') is part of "
+        "the claim that uses it. Do not turn it into a separate claim such as 'the claim was rejected'.\n"
+        "8. Keep a number, amount, limit, time or period in the same claim as the thing it applies to: "
+        "'the policy covers dental treatment up to 25,000 rupees a year' is one claim, not two."
     ),
     "hi": (
         "दिए गए उत्तर को अलग-अलग तथ्यों (claims) में तोड़ें।\n"
@@ -67,7 +71,11 @@ _DECOMPOSE_SYSTEM = {
         "3. संख्याएँ, तिथियाँ और 'नहीं' बिल्कुल वैसे ही रखें।\n"
         "4. उत्तर में जो नहीं है, वह न जोड़ें। शब्दों की परिभाषा या उत्तर पर टिप्पणी न लिखें।\n"
         "5. हर पंक्ति में एक claim, बिना नंबर, बिना टिप्पणी।\n"
-        "6. यदि कोई तथ्य नहीं है तो NO_CLAIMS लिखें।"
+        "6. यदि कोई तथ्य नहीं है तो NO_CLAIMS लिखें।\n"
+        "7. 'रिजेक्ट क्लेम' या 'बची हुई छुट्टी' जैसे विशेषण उसी claim का हिस्सा हैं जिसमें वे आते हैं; "
+        "उनसे 'क्लेम रिजेक्ट हुआ' जैसा अलग claim न बनाएँ।\n"
+        "8. कोई संख्या, राशि, सीमा, समय या अवधि उसी claim में रखें जिस चीज़ पर वह लागू होती है: "
+        "'पॉलिसी दांतों के इलाज को साल में 25,000 रुपए तक कवर करती है' एक ही claim है, दो नहीं।"
     ),
     "ta": (
         "கொடுக்கப்பட்ட பதிலைத் தனித்தனி உண்மைக் கூற்றுகளாகப் பிரிக்கவும்.\n"
@@ -79,7 +87,11 @@ _DECOMPOSE_SYSTEM = {
         "4. பதிலில் இல்லாத தகவலைச் சேர்க்க வேண்டாம். சொற்களுக்கு விளக்கமோ "
         "பதிலைப் பற்றிய கருத்தையோ எழுத வேண்டாம்.\n"
         "5. ஒரு வரிக்கு ஒரு கூற்று; எண்ணிடல் வேண்டாம், விளக்கம் வேண்டாம்.\n"
-        "6. உண்மைக் கூற்று எதுவும் இல்லையெனில் NO_CLAIMS என எழுதவும்."
+        "6. உண்மைக் கூற்று எதுவும் இல்லையெனில் NO_CLAIMS என எழுதவும்.\n"
+        "7. 'நிராகரிக்கப்பட்ட உரிமைகோரல்' போன்ற பெயர்ச்சொற்றொடரின் விவரணம் அதைப் பயன்படுத்தும் "
+        "கூற்றின் பகுதியே; அதிலிருந்து 'உரிமைகோரல் நிராகரிக்கப்பட்டது' என்ற தனிக் கூற்றை உருவாக்க வேண்டாம்.\n"
+        "8. ஒரு எண், தொகை, வரம்பு, நேரம் அல்லது காலத்தை அது பொருந்தும் விஷயத்துடன் ஒரே கூற்றில் வைக்கவும்: "
+        "'பாலிசி பல் சிகிச்சைக்கு ஆண்டுக்கு 25,000 ரூபாய் வரை வழங்குகிறது' ஒரே கூற்று, இரண்டு அல்ல."
     ),
 }
 

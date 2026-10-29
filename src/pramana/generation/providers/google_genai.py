@@ -38,6 +38,8 @@ from pramana.generation.base import (
     TokenLogProb,
     TransientError,
     Usage,
+    is_daily_quota,
+    retry_after_seconds,
 )
 from pramana.generation.budget import provider_timeout
 
@@ -256,10 +258,11 @@ class GoogleGenAIProvider:
                 f"{self.name}: model '{model}' not found. {body}", provider=self.name
             )
         if status == 429:
-            lowered = body.lower()
-            if any(k in lowered for k in ("per day", "daily", "quota", "exhausted")):
+            if is_daily_quota(body):
+                wait = retry_after_seconds(body)
                 return QuotaExhaustedError(
-                    f"{self.name}: daily quota exhausted. {body}", provider=self.name
+                    f"{self.name}: daily quota exhausted. {body}", provider=self.name,
+                    resets_at=time.time() + wait if wait else None,
                 )
             after = resp.headers.get("retry-after")
             return RateLimitError(
